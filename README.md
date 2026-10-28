@@ -2,12 +2,12 @@
 
 **Cursor for Product Managers.**
 
-[![CI](https://github.com/Compass-AI-App/compass-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/Compass-AI-App/compass-AI/actions/workflows/ci.yml)
-[![Release](https://github.com/Compass-AI-App/compass-AI/actions/workflows/release.yml/badge.svg)](https://github.com/Compass-AI-App/compass-AI/releases)
+[![CI](https://github.com/ahmedkhaledmohamed/compass-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedkhaledmohamed/compass-AI/actions/workflows/ci.yml)
+[![Release](https://github.com/ahmedkhaledmohamed/compass-AI/actions/workflows/release.yml/badge.svg)](https://github.com/ahmedkhaledmohamed/compass-AI/releases)
 
 AI-native product discovery that connects to your product's evidence sources — code, docs, analytics, and user feedback — finds where they disagree, and generates agent-ready specifications.
 
-**[Website](https://compass-ai-app.github.io/compass-AI/)** | **[Download](https://github.com/Compass-AI-App/compass-AI/releases/latest)** | **[Quick Start](#quick-start)**
+**[Website](https://ahmedkhaledmohamed.github.io/compass-AI/)** | **[Download](https://github.com/ahmedkhaledmohamed/compass-AI/releases/latest)** | **[Quick Start](#quick-start)**
 
 ---
 
@@ -72,9 +72,9 @@ compass discover
 
 Download the native app:
 
-- **[macOS (.dmg)](https://github.com/Compass-AI-App/compass-AI/releases/latest)**
-- **[Windows (.exe)](https://github.com/Compass-AI-App/compass-AI/releases/latest)**
-- **[Linux (.AppImage)](https://github.com/Compass-AI-App/compass-AI/releases/latest)**
+- **[macOS (.dmg)](https://github.com/ahmedkhaledmohamed/compass-AI/releases/latest)**
+- **[Windows (.exe)](https://github.com/ahmedkhaledmohamed/compass-AI/releases/latest)**
+- **[Linux (.AppImage)](https://github.com/ahmedkhaledmohamed/compass-AI/releases/latest)**
 
 The app includes an onboarding wizard — create a workspace, enter your API key, connect sources, and start discovering.
 

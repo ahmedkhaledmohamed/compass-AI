@@ -37,15 +37,20 @@ export function trustMainWindow(window: BrowserWindow, url: string): void {
 }
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-  if (!trustedWindow || trustedWindow.webContents.isDestroyed() || !event.senderFrame) return false;
-  const contents = trustedWindow.webContents;
-  if (event.sender.id !== contents.id) return false;
-  const frame = event.senderFrame;
-  const main = contents.mainFrame;
-  // Electron serializes a local file frame's origin as file://, while URL.origin is null.
-  const expectedOrigin = rendererURL?.protocol === "file:" ? "file://" : rendererURL?.origin;
-  return frame.processId === main.processId && frame.routingId === main.routingId &&
-    frame.origin === expectedOrigin && isMainRendererURL(frame.url);
+  // Electron may destroy native window/frame wrappers while queued IPC is delivered.
+  try {
+    if (!trustedWindow || trustedWindow.webContents.isDestroyed() || !event.senderFrame) return false;
+    const contents = trustedWindow.webContents;
+    if (event.sender.id !== contents.id) return false;
+    const frame = event.senderFrame;
+    const main = contents.mainFrame;
+    // Electron serializes a local file frame's origin as file://, while URL.origin is null.
+    const expectedOrigin = rendererURL?.protocol === "file:" ? "file://" : rendererURL?.origin;
+    return frame.processId === main.processId && frame.routingId === main.routingId &&
+      frame.origin === expectedOrigin && isMainRendererURL(frame.url);
+  } catch {
+    return false;
+  }
 }
 
 export function handleMainIPC(channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void {

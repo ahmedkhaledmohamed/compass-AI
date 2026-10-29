@@ -23,11 +23,12 @@ function fixture(url = "file:///fictional/compass/index.html") {
     on: (name, handler) => events.set(name, handler),
     setWindowOpenHandler: (handler) => events.set("window-open", handler),
   };
-  exported.trustMainWindow({ webContents: contents }, url);
+  const window = { webContents: contents };
+  exported.trustMainWindow(window, url);
   let calls = 0;
   exported.handleMainIPC("fixture", (_event, argument) => { calls++; return argument; });
   return {
-    ipc: exported, events, frame, contents,
+    ipc: exported, events, frame, contents, window,
     invoke: (event = { sender: contents, senderFrame: { ...frame } }) => handlers.get("fixture")(event, "accepted"),
     calls: () => calls,
   };
@@ -84,6 +85,18 @@ test("destroyed trusted window cannot authorize later requests", () => {
   f.events.get("destroyed")();
   assert.throws(() => f.invoke(), /Unauthorized IPC sender/);
   assert.equal(f.calls(), 0);
+});
+
+test("queued IPC rejects destroyed native wrappers before invoking a handler", () => {
+  for (const wrapper of ["window", "mainFrame", "senderFrame"]) {
+    const f = fixture();
+    const event = { sender: f.contents, senderFrame: { ...f.frame } };
+    const target = wrapper === "window" ? f.window : wrapper === "mainFrame" ? f.contents : event;
+    const property = wrapper === "window" ? "webContents" : wrapper;
+    Object.defineProperty(target, property, { get() { throw new TypeError("Object has been destroyed"); } });
+    assert.throws(() => f.invoke(event), /Unauthorized IPC sender/);
+    assert.equal(f.calls(), 0);
+  }
 });
 
 test("all privileged main and OAuth registrations use the trusted wrapper", () => {

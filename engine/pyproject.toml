@@ -49,8 +49,8 @@ dev = [
 compass = "compass.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Compass-AI-App/compass-AI"
-Repository = "https://github.com/Compass-AI-App/compass-AI"
+Homepage = "https://github.com/ahmedkhaledmohamed/compass-AI"
+Repository = "https://github.com/ahmedkhaledmohamed/compass-AI"
 
 [tool.setuptools.packages.find]
 include = ["compass*"]

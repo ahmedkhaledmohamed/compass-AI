@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import WorkspacePage from "./pages/WorkspacePage";
@@ -112,10 +112,10 @@ function AppWithStartup() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <HashRouter>
         <EngineStatusBanner />
         <AppWithStartup />
-      </BrowserRouter>
+      </HashRouter>
     </ErrorBoundary>
   );
 }

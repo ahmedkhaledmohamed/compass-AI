@@ -6,7 +6,7 @@ Preserves the existing ask()/ask_json() signatures so downstream code is unchang
 
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
 
 from compass.engine.orchestrator import get_orchestrator
 

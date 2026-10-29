@@ -6,19 +6,22 @@ This is the "ask what should I build next and get an answer" experience.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
 
-from compass.config import load_config, get_compass_dir, get_output_dir
+from compass.config import get_compass_dir, get_output_dir, load_config
 from compass.connectors import get_connector
+from compass.engine.discoverer import Discoverer
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.reconciler import Reconciler
-from compass.engine.discoverer import Discoverer
 from compass.engine.specifier import Specifier
 from compass.models.conflicts import ConflictReport
-from compass.models.specs import Opportunity, FeatureSpec
+from compass.models.specs import FeatureSpec, Opportunity
+
+logger = logging.getLogger(__name__)
 
 
 class DiscoveryWorkflow:
@@ -81,6 +84,7 @@ class DiscoveryWorkflow:
                 total += len(evidence)
                 self.console.print(f"  {source.name}: {len(evidence)} items")
             except Exception as e:
+                logger.debug("Source ingestion failed; retaining other source results.", exc_info=True)
                 self.console.print(f"  [red]{source.name}: Error — {e}[/red]")
         return total
 
@@ -97,6 +101,7 @@ class DiscoveryWorkflow:
             specifier = Specifier(self.kg, model=self.config.model)
             return specifier.specify(opportunity)
         except Exception as e:
+            logger.debug("Specification generation failed; keeping the existing error response.", exc_info=True)
             self.console.print(f"[red]Specification failed: {e}[/red]")
             return None
 

@@ -35,9 +35,7 @@ class NotionConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     def _auth_headers(self) -> dict[str, str]:
         """Notion requires Notion-Version header."""
@@ -72,7 +70,7 @@ class NotionConnector(LiveConnector):
                     break
                 cursor = data.get("next_cursor")
             except Exception as e:
-                logger.warning("Failed to search Notion pages: %s", e)
+                logger.warning("Failed to search Notion pages: %s", e, exc_info=True)
                 break
 
         for page in all_pages[:MAX_PAGES]:
@@ -95,7 +93,7 @@ class NotionConnector(LiveConnector):
                     metadata={"type": "notion_page", "page_id": page_id, "source": "api"},
                 ))
             except Exception as e:
-                logger.debug("Failed to fetch blocks for page %s: %s", page_id, e)
+                logger.debug("Failed to fetch blocks for page %s: %s", page_id, e, exc_info=True)
 
         # Search for databases
         try:
@@ -130,9 +128,9 @@ class NotionConnector(LiveConnector):
                             metadata={"type": "notion_database", "database_id": db_id, "row_count": len(rows), "source": "api"},
                         ))
                 except Exception as e:
-                    logger.debug("Failed to query database %s: %s", db_id, e)
+                    logger.debug("Failed to query database %s: %s", db_id, e, exc_info=True)
         except Exception as e:
-            logger.debug("Failed to search Notion databases: %s", e)
+            logger.debug("Failed to search Notion databases: %s", e, exc_info=True)
 
         logger.info("Notion live: fetched %d evidence items", len(evidence))
         return evidence

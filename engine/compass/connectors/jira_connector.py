@@ -33,9 +33,7 @@ class JiraConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion
@@ -86,7 +84,7 @@ class JiraConnector(LiveConnector):
                 if start_at >= total:
                     break
             except Exception as e:
-                logger.warning("Failed to fetch Jira issues: %s", e)
+                logger.warning("Failed to fetch Jira issues: %s", e, exc_info=True)
                 break
 
         if not all_issues:

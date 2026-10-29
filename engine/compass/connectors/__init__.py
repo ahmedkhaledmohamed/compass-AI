@@ -1,17 +1,17 @@
 """Evidence source connectors."""
 
-from compass.connectors.base import Connector
-from compass.connectors.github_connector import GitHubConnector
-from compass.connectors.docs import DocsConnector
-from compass.connectors.google_docs_connector import GoogleDocsConnector
 from compass.connectors.analytics import AnalyticsConnector
+from compass.connectors.base import Connector
+from compass.connectors.confluence_connector import ConfluenceConnector
+from compass.connectors.docs import DocsConnector
+from compass.connectors.github_connector import GitHubConnector
+from compass.connectors.google_docs_connector import GoogleDocsConnector
 from compass.connectors.interviews import InterviewConnector
-from compass.connectors.support import SupportConnector
 from compass.connectors.jira_connector import JiraConnector
-from compass.connectors.slack_connector import SlackConnector
 from compass.connectors.linear_connector import LinearConnector
 from compass.connectors.notion_connector import NotionConnector
-from compass.connectors.confluence_connector import ConfluenceConnector
+from compass.connectors.slack_connector import SlackConnector
+from compass.connectors.support import SupportConnector
 from compass.connectors.zendesk_connector import ZendeskConnector
 
 CONNECTORS: dict[str, type[Connector]] = {
@@ -42,19 +42,19 @@ def get_connector(connector_type: str) -> type[Connector]:
 
 
 __all__ = [
-    "Connector",
-    "GitHubConnector",
-    "DocsConnector",
-    "GoogleDocsConnector",
+    "CONNECTORS",
     "AnalyticsConnector",
+    "ConfluenceConnector",
+    "Connector",
+    "DocsConnector",
+    "GitHubConnector",
+    "GoogleDocsConnector",
     "InterviewConnector",
-    "SupportConnector",
     "JiraConnector",
-    "SlackConnector",
     "LinearConnector",
     "NotionConnector",
-    "ConfluenceConnector",
+    "SlackConnector",
+    "SupportConnector",
     "ZendeskConnector",
-    "CONNECTORS",
     "get_connector",
 ]

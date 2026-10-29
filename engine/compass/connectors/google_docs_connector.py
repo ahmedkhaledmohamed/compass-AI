@@ -45,9 +45,7 @@ class GoogleDocsConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion
@@ -79,7 +77,7 @@ class GoogleDocsConnector(LiveConnector):
             )
             files = resp.json().get("files", [])
         except Exception as e:
-            logger.warning("Failed to list Drive files: %s", e)
+            logger.warning("Failed to list Drive files: %s", e, exc_info=True)
             return evidence
 
         for f in files:
@@ -139,7 +137,7 @@ class GoogleDocsConnector(LiveConnector):
                 )
                 return resp.text
         except Exception as e:
-            logger.warning("Failed to export file %s: %s", file_id, e)
+            logger.warning("Failed to export file %s: %s", file_id, e, exc_info=True)
         return None
 
     # ------------------------------------------------------------------
@@ -188,6 +186,6 @@ class GoogleDocsConnector(LiveConnector):
                     },
                 ))
             except Exception as e:
-                logger.warning("Skipping %s: %s", fpath, e)
+                logger.warning("Skipping %s: %s", fpath, e, exc_info=True)
 
         return evidence

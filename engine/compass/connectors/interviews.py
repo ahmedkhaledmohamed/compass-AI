@@ -75,7 +75,7 @@ class InterviewConnector(Connector):
                 metadata={"file": str(fpath), "type": "interview"},
             )
         except Exception as e:
-            logger.warning("Failed to ingest interview %s: %s", fpath, e)
+            logger.warning("Failed to ingest interview %s: %s", fpath, e, exc_info=True)
             return None
 
     def _extract_title(self, content: str, fpath: Path) -> str:

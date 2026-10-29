@@ -23,7 +23,7 @@ from compass.models.documents import (
     StakeholderUpdate,
 )
 from compass.models.sources import SourceType
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.prompts import DEFAULT_VERSION, get_prompts
 
 
 class Writer:

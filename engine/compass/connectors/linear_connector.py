@@ -88,9 +88,7 @@ class LinearConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion (GraphQL)
@@ -123,7 +121,7 @@ class LinearConnector(LiveConnector):
                     break
                 cursor = page_info.get("endCursor")
             except Exception as e:
-                logger.warning("Failed to fetch Linear issues: %s", e)
+                logger.warning("Failed to fetch Linear issues: %s", e, exc_info=True)
                 break
 
         if all_issues:
@@ -154,7 +152,7 @@ class LinearConnector(LiveConnector):
                     metadata={"type": "linear_projects", "source": "api"},
                 ))
         except Exception as e:
-            logger.debug("Failed to fetch Linear projects: %s", e)
+            logger.debug("Failed to fetch Linear projects: %s", e, exc_info=True)
 
         # Fetch cycles
         try:
@@ -179,7 +177,7 @@ class LinearConnector(LiveConnector):
                     metadata={"type": "linear_cycles", "source": "api"},
                 ))
         except Exception as e:
-            logger.debug("Failed to fetch Linear cycles: %s", e)
+            logger.debug("Failed to fetch Linear cycles: %s", e, exc_info=True)
 
         logger.info("Linear live: fetched %d evidence items", len(evidence))
         return evidence

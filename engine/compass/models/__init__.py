@@ -1,16 +1,16 @@
 """Data models for the four sources of truth."""
 
-from compass.models.sources import SourceType, Evidence, EvidenceStore
 from compass.models.conflicts import Conflict, ConflictReport
-from compass.models.specs import Opportunity, FeatureSpec, AgentTask
+from compass.models.sources import Evidence, EvidenceStore, SourceType
+from compass.models.specs import AgentTask, FeatureSpec, Opportunity
 
 __all__ = [
-    "SourceType",
-    "Evidence",
-    "EvidenceStore",
+    "AgentTask",
     "Conflict",
     "ConflictReport",
-    "Opportunity",
+    "Evidence",
+    "EvidenceStore",
     "FeatureSpec",
-    "AgentTask",
+    "Opportunity",
+    "SourceType",
 ]

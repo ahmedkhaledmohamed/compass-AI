@@ -7,6 +7,7 @@ and presentation generation as a simple in-memory log.
 from __future__ import annotations
 
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 

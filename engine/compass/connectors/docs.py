@@ -79,7 +79,7 @@ class DocsConnector(Connector):
                 metadata={"file": str(fpath), "type": fpath.suffix},
             )
         except Exception as e:
-            logger.warning("Failed to ingest doc %s: %s", fpath, e)
+            logger.warning("Failed to ingest doc %s: %s", fpath, e, exc_info=True)
             return None
 
     def _extract_title(self, content: str, fpath: Path) -> str:

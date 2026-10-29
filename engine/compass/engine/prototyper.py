@@ -13,7 +13,7 @@ from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask
 from compass.models.prototypes import Prototype, PrototypeIteration
 from compass.models.sources import Evidence
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.prompts import DEFAULT_VERSION, get_prompts
 
 logger = logging.getLogger(__name__)
 

@@ -11,8 +11,8 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +126,7 @@ class AnthropicProvider(LLMProvider):
             system=system or "You are Compass, an AI product discovery assistant.",
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
-            for text in stream.text_stream:
-                yield text
+            yield from stream.text_stream
             msg = stream.get_final_message()
             return (msg.usage.input_tokens, msg.usage.output_tokens)
 
@@ -146,8 +145,8 @@ class CompassCloudProvider(LLMProvider):
         model: str = "",
         max_tokens: int = 4096,
     ) -> tuple[str, int, int]:
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         if not self.auth_token:
             raise ValueError(

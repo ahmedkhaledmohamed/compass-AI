@@ -6,14 +6,18 @@ Compass helps you find where your sources of truth disagree.
 
 from __future__ import annotations
 
+import logging
+
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask_json
-from compass.models.sources import SourceType, Evidence
-from compass.models.conflicts import Conflict, ConflictReport, ConflictType, ConflictSeverity
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.models.conflicts import Conflict, ConflictReport, ConflictSeverity, ConflictType
+from compass.models.sources import Evidence, SourceType
+from compass.prompts import DEFAULT_VERSION, get_prompts
+
+logger = logging.getLogger(__name__)
 
 
 def _format_evidence(items: list[Evidence], max_items: int = 15) -> str:
@@ -114,6 +118,7 @@ class Reconciler:
                             signal_strength=c.get("signal_strength", 1),
                         ))
                 except Exception as e:
+                    logger.debug("Could not reconcile evidence sources; retaining other comparisons.", exc_info=True)
                     console.print(f"[dim]Warning: Could not reconcile {source_a.value} vs {source_b.value}: {e}[/dim]")
 
                 progress.advance(task)

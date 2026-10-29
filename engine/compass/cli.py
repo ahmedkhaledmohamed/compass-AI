@@ -14,23 +14,26 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
-from rich.markdown import Markdown
 
 from compass import __version__
 from compass.config import (
     ProductConfig,
     SourceConfig,
-    load_config,
-    save_config,
     get_compass_dir,
     get_output_dir,
+    load_config,
+    save_config,
 )
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     name="compass",
@@ -141,6 +144,7 @@ def ingest():
     table.add_column("Items", justify="right")
 
     from datetime import datetime
+
     from compass.models.sources import CONNECTOR_SOURCE_MAP
 
     for source in config.sources:
@@ -159,6 +163,7 @@ def ingest():
             type_str = _source_badge(source_type.value if hasattr(source_type, 'value') else source_type)
             table.add_row(source.name, type_str, str(count))
         except Exception as e:
+            logger.debug("Source ingestion failed; retaining results from other sources.", exc_info=True)
             table.add_row(source.name, source.type, f"[red]Error: {e}[/red]")
 
     console.print(table)
@@ -236,8 +241,8 @@ def discover(
     config = load_config()
     compass_dir = get_compass_dir()
 
-    from compass.engine.reconciler import Reconciler
     from compass.engine.discoverer import Discoverer
+    from compass.engine.reconciler import Reconciler
 
     kg = _load_knowledge_graph(compass_dir)
     if not kg:
@@ -319,7 +324,7 @@ def specify(
     compass_dir = get_compass_dir()
 
     from compass.engine.specifier import Specifier
-    from compass.models.specs import Opportunity, Confidence
+    from compass.models.specs import Confidence, Opportunity
 
     kg = _load_knowledge_graph(compass_dir)
     if not kg:
@@ -378,9 +383,10 @@ def refresh(
         console.print("[yellow]No sources connected. Run 'compass connect' first.[/yellow]")
         raise typer.Exit(1)
 
+    from datetime import datetime
+
     from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
-    from datetime import datetime
 
     compass_dir = get_compass_dir()
     kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
@@ -416,6 +422,7 @@ def refresh(
             kg.add_many(evidence)
             table.add_row(source.name, str(removed), str(len(evidence)))
         except Exception as e:
+            logger.debug("Source refresh failed; retaining results from other sources.", exc_info=True)
             table.add_row(source.name, "?", f"[red]Error: {e}[/red]")
 
     console.print(table)
@@ -499,8 +506,10 @@ def _ask_single(kg, config, question: str):
 def _ask_interactive(kg, config, compass_dir: Path):
     """Interactive multi-turn chat mode."""
     import json
-    from compass.engine.llm import ask_stream
+
     from rich.live import Live
+
+    from compass.engine.llm import ask_stream
 
     history_path = compass_dir / "chat_history.json"
     history: list[dict] = []
@@ -508,6 +517,7 @@ def _ask_interactive(kg, config, compass_dir: Path):
         try:
             history = json.loads(history_path.read_text())
         except Exception:
+            logger.debug("Could not restore conversation history; starting a new conversation.", exc_info=True)
             history = []
 
     console.print(Panel(
@@ -678,6 +688,7 @@ def status(
 def _show_health(compass_dir: Path):
     """Show evidence freshness per source."""
     from datetime import datetime, timedelta
+
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
@@ -873,7 +884,7 @@ def doctor(
             sources_connected = source_count > 0
             source_types = {s.type for s in config.sources}
         except Exception:
-            pass
+            logger.debug("Could not read optional workspace diagnostic state.", exc_info=True)
     type_str = f" ({', '.join(sorted(source_types))})" if source_types else ""
     _check(
         f"Sources connected ({source_count}{type_str})",
@@ -891,7 +902,7 @@ def doctor(
             data = json.loads(evidence_file.read_text())
             evidence_count = len(data) if isinstance(data, list) else 0
         except Exception:
-            pass
+            logger.debug("Could not read optional workspace diagnostic state.", exc_info=True)
     _check(
         f"Evidence ingested ({evidence_count} items)",
         evidence_ingested,
@@ -915,7 +926,7 @@ def doctor(
                 if "API_KEY" in env_content:
                     api_key_set = True
             except Exception:
-                pass
+                logger.debug("Could not read optional workspace diagnostic state.", exc_info=True)
     _check(
         "API key configured",
         api_key_set,
@@ -946,7 +957,7 @@ def doctor(
         data = res.read().decode()
         engine_ok = "ready" in data
     except Exception:
-        pass
+        logger.debug("Could not read optional workspace diagnostic state.", exc_info=True)
     _check(
         "Engine server reachable",
         engine_ok,
@@ -1431,6 +1442,7 @@ def quickstart():
             console.print(f"  [green]✓[/green] {source.name}: {len(evidence)} items")
             total += len(evidence)
         except Exception as e:
+            logger.debug("Quickstart operation failed; keeping the existing error response.", exc_info=True)
             console.print(f"  [red]✗[/red] {source.name}: {e}")
 
     console.print(f"\n[bold]{total} evidence items[/bold] ingested.")
@@ -1439,8 +1451,8 @@ def quickstart():
     if total > 0 and typer.confirm("\nRun discovery now? (requires ANTHROPIC_API_KEY)", default=True):
         console.print("\n[bold]Running reconciliation + discovery...[/bold]")
         try:
-            from compass.engine.reconciler import Reconciler
             from compass.engine.discoverer import Discoverer
+            from compass.engine.reconciler import Reconciler
 
             reconciler = Reconciler(kg, model=config.model)
             report = reconciler.reconcile()
@@ -1463,6 +1475,7 @@ def quickstart():
             else:
                 console.print(f"[red]Error: {e}[/red]")
         except Exception as e:
+            logger.debug("Quickstart operation failed; keeping the existing error response.", exc_info=True)
             console.print(f"[red]Discovery failed: {e}[/red]")
 
     console.print("\n[bold green]Quickstart complete![/bold green]")
@@ -1480,9 +1493,9 @@ def demo(
     skip_spec: bool = typer.Option(False, "--skip-spec", help="Skip spec generation for faster demo"),
 ):
     """Run the full Compass pipeline on compelling sample data in one command."""
-    import time
-    import tempfile
     import shutil
+    import tempfile
+    import time
     from datetime import datetime
 
     start_time = time.time()
@@ -1671,8 +1684,8 @@ def login(
 ):
     """Log in to Compass Cloud."""
     import json
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     url = f"{_get_cloud_url()}/auth/login"
     payload = json.dumps({"email": email, "password": password}).encode()
@@ -1687,6 +1700,7 @@ def login(
         body = json.loads(e.read().decode()) if e.fp else {}
         console.print(f"[red]Login failed: {body.get('detail', 'Unknown error')}[/red]")
     except Exception as e:
+        logger.debug("Cloud login request failed.", exc_info=True)
         console.print(f"[red]Connection error: {e}[/red]")
 
 
@@ -1697,8 +1711,8 @@ def signup(
 ):
     """Create a Compass Cloud account."""
     import json
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     url = f"{_get_cloud_url()}/auth/signup"
     payload = json.dumps({"email": email, "password": password}).encode()
@@ -1713,6 +1727,7 @@ def signup(
         body = json.loads(e.read().decode()) if e.fp else {}
         console.print(f"[red]Signup failed: {body.get('detail', 'Unknown error')}[/red]")
     except Exception as e:
+        logger.debug("Cloud signup request failed.", exc_info=True)
         console.print(f"[red]Connection error: {e}[/red]")
 
 
@@ -1720,8 +1735,8 @@ def signup(
 def whoami():
     """Show current Compass Cloud account info."""
     import json
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     token = _load_cloud_token()
     if not token:
@@ -1745,6 +1760,7 @@ def whoami():
     except urllib.error.HTTPError:
         console.print("[red]Session expired. Run: compass login[/red]")
     except Exception as e:
+        logger.debug("Could not retrieve the cloud account profile.", exc_info=True)
         console.print(f"[red]Connection error: {e}[/red]")
 
 
@@ -1823,6 +1839,7 @@ def install():
             try:
                 config = json.loads(claude_config_path.read_text())
             except Exception:
+                logger.debug("Could not load existing client configuration; using an empty configuration.", exc_info=True)
                 config = {}
 
         mcp_servers = config.setdefault("mcpServers", {})
@@ -1840,6 +1857,7 @@ def install():
             try:
                 config = json.loads(cursor_config_path.read_text())
             except Exception:
+                logger.debug("Could not load existing client configuration; using an empty configuration.", exc_info=True)
                 config = {}
 
         mcp_servers = config.setdefault("mcpServers", {})

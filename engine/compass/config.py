@@ -8,7 +8,6 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-
 COMPASS_DIR = ".compass"
 CONFIG_FILE = "compass.yaml"
 OUTPUT_DIR = "output"

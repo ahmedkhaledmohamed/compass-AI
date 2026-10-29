@@ -74,7 +74,7 @@ class SupportConnector(Connector):
             if not rows:
                 return []
 
-            headers = [h.lower() for h in rows[0].keys()]
+            headers = [h.lower() for h in rows[0]]
             title_col = self._find_column(headers, ["title", "subject", "summary", "name"])
             body_col = self._find_column(headers, ["description", "body", "content", "text", "message"])
             category_col = self._find_column(headers, ["category", "type", "tag", "label"])
@@ -131,7 +131,7 @@ class SupportConnector(Connector):
 
             return evidence
         except Exception as e:
-            logger.warning("Failed to ingest support CSV %s: %s", fpath, e)
+            logger.warning("Failed to ingest support CSV %s: %s", fpath, e, exc_info=True)
             return []
 
     def _ingest_text(self, fpath: Path) -> Evidence | None:
@@ -147,7 +147,7 @@ class SupportConnector(Connector):
                 metadata={"file": str(fpath), "type": "support_text"},
             )
         except Exception as e:
-            logger.warning("Failed to ingest support text %s: %s", fpath, e)
+            logger.warning("Failed to ingest support text %s: %s", fpath, e, exc_info=True)
             return None
 
     def _find_column(self, headers: list[str], candidates: list[str]) -> str | None:

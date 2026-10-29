@@ -7,25 +7,34 @@ can call it via the engine-bridge module.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import traceback
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from compass.config import ProductConfig, SourceConfig, save_config, load_config, get_compass_dir, get_output_dir
+from compass.config import (
+    ProductConfig,
+    SourceConfig,
+    get_compass_dir,
+    get_output_dir,
+    load_config,
+    save_config,
+)
 from compass.connectors import get_connector
-from compass.engine.knowledge_graph import KnowledgeGraph
-from compass.engine.orchestrator import get_orchestrator, configure_orchestrator
-from compass.engine.reconciler import Reconciler
 from compass.engine.discoverer import Discoverer
+from compass.engine.knowledge_graph import KnowledgeGraph
+from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
+from compass.engine.reconciler import Reconciler
 from compass.engine.specifier import Specifier
 
+logger = logging.getLogger(__name__)
 
 _kg: KnowledgeGraph | None = None
 _kg_workspace_path: str | None = None
@@ -309,6 +318,7 @@ def ingest(req: WorkspaceRequest):
             total += count
             results.append({"name": source.name, "type": source.type, "items": count})
         except Exception as e:
+            logger.debug("Source ingestion failed; returning the existing per-source error.", exc_info=True)
             results.append({"name": source.name, "type": source.type, "items": 0, "error": str(e)})
 
     summary = _kg.store.summary
@@ -363,6 +373,7 @@ def refresh(req: RefreshRequest):
             _kg.add_many(evidence)
             results.append({"name": source.name, "removed": removed, "added": len(evidence)})
         except Exception as e:
+            logger.debug("Source refresh failed; returning the existing per-source error.", exc_info=True)
             results.append({"name": source.name, "removed": 0, "added": 0, "error": str(e)})
 
     return {"status": "ok", "total": len(_kg), "sources": results}
@@ -502,7 +513,7 @@ def get_discovery_history(req: WorkspaceRequest):
     base = Path(req.workspace_path)
     compass_dir = get_compass_dir(base)
 
-    from compass.engine.history import get_history_summary, get_history
+    from compass.engine.history import get_history, get_history_summary
     summary = get_history_summary(compass_dir)
     entries = get_history(compass_dir)
 
@@ -795,7 +806,7 @@ def specify(req: SpecifyRequest):
     config = load_config(base)
     kg = _get_kg(req.workspace_path)
 
-    from compass.models.specs import Opportunity, Confidence
+    from compass.models.specs import Confidence, Opportunity
 
     compass_dir = get_compass_dir(base)
     cache_path = compass_dir / "opportunities_cache.json"
@@ -909,7 +920,7 @@ def _get_chat_system(agent_mode: str, has_evidence: bool = True, workspace_path:
                 product_context += f" Description: {config.description}"
             product_context += "\n"
         except (FileNotFoundError, Exception):
-            pass
+            logger.debug("Could not add optional workspace context to the chat prompt.", exc_info=True)
 
     if not has_evidence:
         return CHAT_SYSTEM_NO_EVIDENCE + product_context
@@ -917,7 +928,7 @@ def _get_chat_system(agent_mode: str, has_evidence: bool = True, workspace_path:
     return base_prompt + product_context
 
 
-def _try_get_kg(workspace_path: str) -> "KnowledgeGraph | None":
+def _try_get_kg(workspace_path: str) -> KnowledgeGraph | None:
     """Try to load the knowledge graph, returning None if unavailable.
 
     Falls back to loading from persistence if the in-memory global is empty,
@@ -927,6 +938,7 @@ def _try_get_kg(workspace_path: str) -> "KnowledgeGraph | None":
         return _get_kg(workspace_path)
     except (HTTPException, FileNotFoundError, Exception):
         # _get_kg raises when KG is empty — try loading from disk directly
+        logger.debug("Could not open the knowledge graph; trying the existing fallback.", exc_info=True)
         try:
             base = Path(workspace_path)
             kg_dir = get_compass_dir(base) / "knowledge"
@@ -935,7 +947,7 @@ def _try_get_kg(workspace_path: str) -> "KnowledgeGraph | None":
                 if len(kg) > 0:
                     return kg
         except Exception:
-            pass
+            logger.debug("Could not open the knowledge graph; trying the existing fallback.", exc_info=True)
         return None
 
 
@@ -1131,7 +1143,13 @@ def discover_stream(req: WorkspaceRequest):
 
 # ---------- Document CRUD endpoints ----------
 
-from compass.documents import create_document, get_document, list_documents, delete_document, save_document
+from compass.documents import (
+    create_document,
+    delete_document,
+    get_document,
+    list_documents,
+    save_document,
+)
 
 
 class DocumentSaveRequest(BaseModel):
@@ -1382,7 +1400,7 @@ def prototype_component_get(component_id: str):
 
 # ---------- Template endpoints ----------
 
-from compass.templates import list_templates, get_template
+from compass.templates import get_template, list_templates
 
 
 @app.get("/templates")

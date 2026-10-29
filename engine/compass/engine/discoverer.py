@@ -5,15 +5,19 @@ This answers the question: "What should we build next?"
 
 from __future__ import annotations
 
+import logging
+
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask_json
-from compass.models.sources import Evidence, SourceType
 from compass.models.conflicts import ConflictReport
-from compass.models.specs import Opportunity, Confidence
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.models.sources import Evidence, SourceType
+from compass.models.specs import Confidence, Opportunity
+from compass.prompts import DEFAULT_VERSION, get_prompts
+
+logger = logging.getLogger(__name__)
 
 
 def _format_evidence_list(items: list[Evidence], max_items: int = 10) -> str:
@@ -87,6 +91,7 @@ class Discoverer:
             try:
                 result = ask_json(prompt, system=prompts["system"], model=self.model, max_tokens=3000)
             except Exception as e:
+                logger.debug("Discovery failed; keeping the existing error response.", exc_info=True)
                 console.print(f"[red]Discovery failed: {e}[/red]")
                 return []
 

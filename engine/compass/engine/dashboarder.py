@@ -10,9 +10,9 @@ import logging
 
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask_json
-from compass.models.dashboards import DashboardSpec, ChartSpec
+from compass.models.dashboards import ChartSpec, DashboardSpec
 from compass.models.sources import Evidence
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.prompts import DEFAULT_VERSION, get_prompts
 
 logger = logging.getLogger(__name__)
 

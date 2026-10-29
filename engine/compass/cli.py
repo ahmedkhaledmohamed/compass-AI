@@ -893,16 +893,16 @@ def doctor(
     )
 
     # 7. Evidence ingested
-    evidence_file = compass_dir / "knowledge" / "evidence_store.json"
-    evidence_ingested = evidence_file.exists()
+    evidence_ingested = False
     evidence_count = 0
-    if evidence_ingested:
-        try:
-            import json
-            data = json.loads(evidence_file.read_text())
-            evidence_count = len(data) if isinstance(data, list) else 0
-        except Exception:
-            logger.debug("Could not read optional workspace diagnostic state.", exc_info=True)
+    try:
+        from compass.engine.evidence_repository import EvidenceRepository
+        knowledge_dir = compass_dir / "knowledge"
+        if knowledge_dir.exists():
+            evidence_count = len(EvidenceRepository(knowledge_dir).read()[1])
+            evidence_ingested = evidence_count > 0
+    except Exception:
+        logger.warning("Could not read saved evidence; check workspace storage.", exc_info=True)
     _check(
         f"Evidence ingested ({evidence_count} items)",
         evidence_ingested,

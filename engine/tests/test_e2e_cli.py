@@ -13,9 +13,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from compass.server import app
 import compass.server as server_module
-
+from compass.server import app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -216,10 +215,11 @@ class TestE2EPipeline:
 
         kg_dir = compass_dir / "knowledge"
         assert kg_dir.exists()
-        evidence_store = kg_dir / "evidence_store.json"
+        evidence_store = kg_dir / "evidence.sqlite3"
         assert evidence_store.exists()
 
-        store_data = json.loads(evidence_store.read_text())
+        from compass.engine.evidence_repository import EvidenceRepository
+        store_data = EvidenceRepository(kg_dir).read()[1]
         assert isinstance(store_data, list)
         assert len(store_data) >= 5
 
@@ -309,9 +309,10 @@ class TestE2EPipeline:
         assert config_path.exists()
 
         # Evidence store
-        evidence_path = compass_dir / "knowledge" / "evidence_store.json"
+        evidence_path = compass_dir / "knowledge" / "evidence.sqlite3"
         assert evidence_path.exists()
-        store = json.loads(evidence_path.read_text())
+        from compass.engine.evidence_repository import EvidenceRepository
+        store = EvidenceRepository(evidence_path.parent).read()[1]
         assert isinstance(store, list)
         assert len(store) >= 5
 
@@ -402,6 +403,6 @@ class TestE2ERealLLM:
 
         # Verify persistence
         compass_dir = demo_workspace / ".compass"
-        assert (compass_dir / "knowledge" / "evidence_store.json").exists()
+        assert (compass_dir / "knowledge" / "evidence.sqlite3").exists()
         assert (compass_dir / "output" / "conflict-report.md").exists()
         assert (compass_dir / "opportunities_cache.json").exists()

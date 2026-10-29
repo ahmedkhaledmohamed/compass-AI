@@ -24,8 +24,9 @@ def reset_server_state():
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(monkeypatch):
+    monkeypatch.setattr(server_module, "_engine_token", "fictional-engine-session")
+    return TestClient(app, headers={"Authorization": "Bearer fictional-engine-session"})
 
 
 @pytest.fixture

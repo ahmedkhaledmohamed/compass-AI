@@ -13,9 +13,11 @@ import { ChildProcess, spawn, execSync } from "child_process";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import net from "net";
+import crypto from "crypto";
 
 let engineProcess: ChildProcess | null = null;
 let enginePort: number = 0;
+let engineToken = "";
 let intentionalStop = false;
 
 const isPackaged = app.isPackaged;
@@ -135,7 +137,9 @@ async function pollHealth(port: number, timeoutMs = 30_000): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`http://localhost:${port}/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: { Authorization: `Bearer ${engineToken}` },
+      });
       const data = await res.json();
       if (data.status === "ready") return true;
     } catch {
@@ -167,6 +171,7 @@ export async function startEngine(): Promise<number> {
 
   const python = findPython();
   enginePort = await findFreePort();
+  engineToken = crypto.randomBytes(32).toString("hex");
 
   console.log(`[engine-bridge] Starting engine: ${python} -m compass.server ${enginePort}`);
 
@@ -177,6 +182,7 @@ export async function startEngine(): Promise<number> {
     env: {
       ...process.env,
       COMPASS_ENGINE_PORT: String(enginePort),
+      COMPASS_ENGINE_TOKEN: engineToken,
     },
   });
 
@@ -192,6 +198,7 @@ export async function startEngine(): Promise<number> {
     console.log(`[engine-bridge] Engine exited with code ${code}`);
     engineProcess = null;
     enginePort = 0;
+    engineToken = "";
 
     if (!intentionalStop) {
       console.error("[engine-bridge] Engine crashed unexpectedly");
@@ -222,6 +229,7 @@ export async function startEngine(): Promise<number> {
 
 export function stopEngine(): void {
   intentionalStop = true;
+  engineToken = "";
   if (engineProcess) {
     console.log("[engine-bridge] Stopping engine");
     engineProcess.kill("SIGTERM");
@@ -234,21 +242,32 @@ export function getEnginePort(): number {
   return enginePort;
 }
 
-export async function engineFetch(
+export async function engineRequest(
   endpoint: string,
   options?: { method?: string; body?: unknown }
-): Promise<unknown> {
-  if (!enginePort) throw new Error("Engine not started");
+): Promise<Response> {
+  if (!enginePort || !engineToken) throw new Error("Engine not started");
 
-  const url = `http://localhost:${enginePort}${endpoint}`;
+  const origin = `http://127.0.0.1:${enginePort}`;
+  const url = new URL(endpoint, origin);
+  if (!endpoint.startsWith("/") || url.origin !== origin) {
+    throw new Error("Engine endpoint must stay on the local engine origin");
+  }
   const fetchOpts: RequestInit = {
     method: options?.body ? "POST" : options?.method || "GET",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${engineToken}` },
   };
   if (options?.body) {
     fetchOpts.body = JSON.stringify(options.body);
   }
 
-  const res = await fetch(url, fetchOpts);
+  return fetch(url.toString(), fetchOpts);
+}
+
+export async function engineFetch(
+  endpoint: string,
+  options?: { method?: string; body?: unknown }
+): Promise<unknown> {
+  const res = await engineRequest(endpoint, options);
   return res.json();
 }

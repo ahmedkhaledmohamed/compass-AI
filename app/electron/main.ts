@@ -18,7 +18,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-import { startEngine, stopEngine, engineFetch } from "./engine-bridge";
+import { startEngine, stopEngine, engineFetch, engineRequest } from "./engine-bridge";
 import { registerOAuthIPC, handleOAuthCallback } from "./oauth";
 import { getProvider, getAllProviders } from "./oauth-providers";
 
@@ -241,15 +241,8 @@ ipcMain.handle("engine-call", async (_event, endpoint: string, body?: unknown) =
 ipcMain.handle(
   "engine-stream",
   async (event, endpoint: string, body?: unknown) => {
-    const port = process.env.COMPASS_ENGINE_PORT || "9811";
-    const url = `http://localhost:${port}${endpoint}`;
-
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      const res = await engineRequest(endpoint, { method: "POST", body });
 
       if (!res.body) return { status: "error", message: "No response body" };
 

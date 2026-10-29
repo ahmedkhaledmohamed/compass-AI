@@ -11,7 +11,7 @@ Get from zero to your first product discovery in 5 minutes.
 
 ```bash
 # Clone and install
-git clone https://github.com/Compass-AI-App/compass-AI.git
+git clone https://github.com/ahmedkhaledmohamed/compass-AI.git
 cd compass-AI/engine
 pip install -e .
 

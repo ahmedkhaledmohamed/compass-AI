@@ -142,7 +142,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "Compass-AI-App",
+      "owner": "ahmedkhaledmohamed",
       "repo": "compass-AI"
     }
   }

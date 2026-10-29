@@ -50,6 +50,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run test:secrets
       - run: npm run test:engine-auth
+      - run: npm run test:ipc
 
   app-build:
     name: App Build (vite)

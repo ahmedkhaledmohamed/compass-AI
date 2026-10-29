@@ -115,7 +115,7 @@ export default function PrototypePreview({
           <iframe
             ref={iframeRef}
             srcDoc={currentHtml}
-            sandbox="allow-scripts allow-same-origin"
+            sandbox="allow-scripts"
             className="w-full h-full border-0"
             title={prototype.title}
           />

@@ -8,7 +8,8 @@
  * Token refresh is handled automatically when tokens are near expiration.
  */
 
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow } from "electron";
+import { handleMainIPC } from "./ipc";
 import crypto from "crypto";
 import http from "http";
 import type { AddressInfo } from "net";
@@ -375,7 +376,7 @@ export async function refreshAccessToken(
 // ---------------------------------------------------------------------------
 
 export function registerOAuthIPC(): void {
-  ipcMain.handle(
+  handleMainIPC(
     "oauth-start",
     async (
       _event,
@@ -385,7 +386,7 @@ export function registerOAuthIPC(): void {
     }
   );
 
-  ipcMain.handle(
+  handleMainIPC(
     "oauth-refresh",
     async (
       _event,

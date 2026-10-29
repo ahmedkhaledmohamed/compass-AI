@@ -15,7 +15,6 @@ from pathlib import Path
 from compass.models.conflicts import ConflictReport
 from compass.models.specs import Opportunity
 
-
 HISTORY_FILE = "discovery_history.json"
 FEEDBACK_FILE = "feedback.json"
 QUALITY_LOG_FILE = "quality_log.json"

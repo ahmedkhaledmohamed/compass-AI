@@ -33,9 +33,7 @@ class ConfluenceConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion
@@ -82,7 +80,7 @@ class ConfluenceConnector(LiveConnector):
                 else:
                     break
             except Exception as e:
-                logger.warning("Failed to fetch Confluence pages: %s", e)
+                logger.warning("Failed to fetch Confluence pages: %s", e, exc_info=True)
                 break
 
         # Fetch body for each page and create evidence
@@ -116,7 +114,7 @@ class ConfluenceConnector(LiveConnector):
                     },
                 ))
             except Exception as e:
-                logger.debug("Failed to fetch body for page %s: %s", page_id, e)
+                logger.debug("Failed to fetch body for page %s: %s", page_id, e, exc_info=True)
 
         logger.info("Confluence live: fetched %d evidence items from %s", len(evidence), site)
         return evidence

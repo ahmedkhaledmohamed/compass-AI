@@ -30,14 +30,14 @@ Then use it:
 """
 
 # Re-export the public API for connector authors
-from compass.connectors.base import Connector
-from compass.models.sources import Evidence, SourceType, EvidenceStore
 from compass.config import SourceConfig
+from compass.connectors.base import Connector
+from compass.models.sources import Evidence, EvidenceStore, SourceType
 
 __all__ = [
     "Connector",
     "Evidence",
-    "SourceType",
     "EvidenceStore",
     "SourceConfig",
+    "SourceType",
 ]

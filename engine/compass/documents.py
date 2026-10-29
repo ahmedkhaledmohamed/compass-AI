@@ -41,7 +41,7 @@ def get_document(workspace_path: Path, doc_id: str) -> StoredDocument | None:
         data = json.loads(doc_path.read_text())
         return StoredDocument(**data)
     except (json.JSONDecodeError, Exception) as e:
-        logger.warning("Failed to load document %s: %s", doc_id, e)
+        logger.warning("Failed to load document %s: %s", doc_id, e, exc_info=True)
         return None
 
 
@@ -54,6 +54,7 @@ def list_documents(workspace_path: Path) -> list[StoredDocument]:
             data = json.loads(f.read_text())
             docs.append(StoredDocument(**data))
         except (json.JSONDecodeError, Exception):
+            logger.debug("Could not load a cached document; skipping the document.", exc_info=True)
             continue
     return docs
 

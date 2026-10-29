@@ -34,9 +34,7 @@ class ZendeskConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().exists():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     def _auth_headers(self) -> dict[str, str]:
         """Zendesk uses Bearer token or basic auth with API token."""
@@ -84,7 +82,7 @@ class ZendeskConnector(LiveConnector):
                 all_tickets.extend(tickets)
                 url = data.get("next_page")
             except Exception as e:
-                logger.warning("Failed to fetch Zendesk tickets: %s", e)
+                logger.warning("Failed to fetch Zendesk tickets: %s", e, exc_info=True)
                 break
 
         if not all_tickets:
@@ -129,7 +127,7 @@ class ZendeskConnector(LiveConnector):
                         comment_lines = [f"- {c.get('author_id', 'unknown')}: {c.get('body', '')[:300]}" for c in comments[:10]]
                         comment_text = "\n\n**Comments:**\n" + "\n".join(comment_lines)
                 except Exception:
-                    pass
+                    logger.debug("Could not enrich ticket evidence with satisfaction ratings.", exc_info=True)
 
             content_parts = [
                 f"**{subject}**",

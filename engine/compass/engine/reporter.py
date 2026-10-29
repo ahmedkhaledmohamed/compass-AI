@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from compass.config import load_config, get_compass_dir
+from compass.config import get_compass_dir, load_config
 from compass.engine.knowledge_graph import KnowledgeGraph
 
 

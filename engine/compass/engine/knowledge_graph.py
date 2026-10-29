@@ -8,6 +8,7 @@ disk as evidence_store.json alongside ChromaDB's vector data.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -15,6 +16,8 @@ import chromadb
 from chromadb.config import Settings
 
 from compass.models.sources import Evidence, EvidenceStore, SourceType
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraph:
@@ -96,6 +99,7 @@ class KnowledgeGraph:
                 where=where,
             )
         except Exception:
+            logger.debug("Knowledge collection query failed; returning no matches.", exc_info=True)
             return []
 
         if not results["ids"] or not results["ids"][0]:
@@ -136,7 +140,7 @@ class KnowledgeGraph:
         try:
             self._collection.delete(ids=list(remove_ids))
         except Exception:
-            pass
+            logger.debug("Could not remove connector entries from the vector collection.", exc_info=True)
 
         self._save_store()
         return len(remove_ids)
@@ -177,7 +181,7 @@ class KnowledgeGraph:
             self._store = EvidenceStore(items=items)
         except Exception:
             # If the file is corrupted, start fresh
-            pass
+            logger.debug("Could not restore the evidence store; retaining an empty store.", exc_info=True)
 
     @staticmethod
     def _evidence_to_dict(e: Evidence) -> dict:

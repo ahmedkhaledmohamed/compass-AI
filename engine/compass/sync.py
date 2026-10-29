@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ class SyncScheduler:
             logger.info("Sync complete for %s: %d items", source_name, item_count)
         except Exception as e:
             status.last_error = str(e)
-            logger.warning("Sync failed for %s: %s", source_name, e)
+            logger.warning("Sync failed for %s: %s", source_name, e, exc_info=True)
         finally:
             status.syncing = False
 

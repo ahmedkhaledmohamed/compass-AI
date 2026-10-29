@@ -185,7 +185,7 @@ class AnalyticsConnector(Connector):
 
             return self._build_evidence_from_rows(rows, fpath, "csv")
         except Exception as e:
-            logger.warning("Failed to ingest CSV %s: %s", fpath, e)
+            logger.warning("Failed to ingest CSV %s: %s", fpath, e, exc_info=True)
             return []
 
     def _ingest_excel(self, fpath: Path) -> list[Evidence]:
@@ -227,7 +227,7 @@ class AnalyticsConnector(Connector):
             wb.close()
             return evidence
         except Exception as e:
-            logger.warning("Failed to ingest Excel %s: %s", fpath, e)
+            logger.warning("Failed to ingest Excel %s: %s", fpath, e, exc_info=True)
             return []
 
     def _build_evidence_from_rows(
@@ -340,5 +340,5 @@ class AnalyticsConnector(Connector):
                 metadata={"file": str(fpath), "type": "json", "records": count},
             )]
         except Exception as e:
-            logger.warning("Failed to ingest JSON %s: %s", fpath, e)
+            logger.warning("Failed to ingest JSON %s: %s", fpath, e, exc_info=True)
             return []

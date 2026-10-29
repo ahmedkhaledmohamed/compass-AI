@@ -49,9 +49,7 @@ class GitHubConnector(LiveConnector):
         url = self.config.url
         if url:
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion
@@ -88,7 +86,7 @@ class GitHubConnector(LiveConnector):
                 metadata={"type": "repo_metadata", "repo": repo_slug, "source": "api"},
             ))
         except Exception as e:
-            logger.warning("Failed to fetch repo metadata: %s", e)
+            logger.warning("Failed to fetch repo metadata: %s", e, exc_info=True)
 
         # README
         try:
@@ -105,7 +103,7 @@ class GitHubConnector(LiveConnector):
                 metadata={"type": "readme", "repo": repo_slug, "source": "api"},
             ))
         except Exception as e:
-            logger.debug("No README or failed to fetch: %s", e)
+            logger.debug("No README or failed to fetch: %s", e, exc_info=True)
 
         # Recent commits (last 30)
         try:
@@ -128,7 +126,7 @@ class GitHubConnector(LiveConnector):
                     metadata={"type": "git_log", "repo": repo_slug, "source": "api"},
                 ))
         except Exception as e:
-            logger.warning("Failed to fetch commits: %s", e)
+            logger.warning("Failed to fetch commits: %s", e, exc_info=True)
 
         # Open issues (last 30)
         try:
@@ -161,7 +159,7 @@ class GitHubConnector(LiveConnector):
                     },
                 ))
         except Exception as e:
-            logger.warning("Failed to fetch issues: %s", e)
+            logger.warning("Failed to fetch issues: %s", e, exc_info=True)
 
         # Open pull requests (last 30)
         try:
@@ -192,7 +190,7 @@ class GitHubConnector(LiveConnector):
                     },
                 ))
         except Exception as e:
-            logger.warning("Failed to fetch PRs: %s", e)
+            logger.warning("Failed to fetch PRs: %s", e, exc_info=True)
 
         logger.info("GitHub live: fetched %d evidence items from %s", len(evidence), repo_slug)
         return evidence
@@ -258,7 +256,7 @@ class GitHubConnector(LiveConnector):
                     },
                 ))
             except Exception as e:
-                logger.warning("Skipping %s: %s", fpath, e)
+                logger.warning("Skipping %s: %s", fpath, e, exc_info=True)
                 continue
 
         git_log = self._get_git_log(repo_path)
@@ -302,4 +300,5 @@ class GitHubConnector(LiveConnector):
                 lines.append(f"- {c.committed_datetime.strftime('%Y-%m-%d')} | {c.summary}")
             return "\n".join(lines)
         except Exception:
+            logger.debug("Could not read the repository git log; omitting commit evidence.", exc_info=True)
             return ""

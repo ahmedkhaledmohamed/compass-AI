@@ -6,18 +6,30 @@ The registry maps version names to prompt dicts for each engine component.
 
 from __future__ import annotations
 
-from compass.prompts.reconcile_v1 import SYSTEM as RECONCILE_V1_SYSTEM, PROMPT as RECONCILE_V1_PROMPT
-from compass.prompts.discover_v1 import SYSTEM as DISCOVER_V1_SYSTEM, PROMPT as DISCOVER_V1_PROMPT
-from compass.prompts.specify_v1 import SYSTEM as SPECIFY_V1_SYSTEM, PROMPT as SPECIFY_V1_PROMPT
-from compass.prompts.write_brief_v1 import SYSTEM as WRITE_BRIEF_V1_SYSTEM, PROMPT as WRITE_BRIEF_V1_PROMPT
-from compass.prompts.write_update_v1 import SYSTEM as WRITE_UPDATE_V1_SYSTEM, PROMPT as WRITE_UPDATE_V1_PROMPT
-from compass.prompts.challenge_v1 import SYSTEM as CHALLENGE_V1_SYSTEM, PROMPT as CHALLENGE_V1_PROMPT
-from compass.prompts.experiment_v1 import SYSTEM as EXPERIMENT_V1_SYSTEM, PROMPT as EXPERIMENT_V1_PROMPT
-from compass.prompts.plan_week_v1 import SYSTEM as PLAN_WEEK_V1_SYSTEM, PROMPT as PLAN_WEEK_V1_PROMPT
-from compass.prompts.analyze_data_v1 import SYSTEM as ANALYZE_DATA_V1_SYSTEM, PROMPT as ANALYZE_DATA_V1_PROMPT
-from compass.prompts.dashboard_v1 import SYSTEM as DASHBOARD_V1_SYSTEM, PROMPT as DASHBOARD_V1_PROMPT
-from compass.prompts.present_v1 import SYSTEM as PRESENT_V1_SYSTEM, USER as PRESENT_V1_PROMPT
-from compass.prompts.prototype_v1 import SYSTEM as PROTOTYPE_V1_SYSTEM, USER as PROTOTYPE_V1_PROMPT
+from compass.prompts.analyze_data_v1 import PROMPT as ANALYZE_DATA_V1_PROMPT
+from compass.prompts.analyze_data_v1 import SYSTEM as ANALYZE_DATA_V1_SYSTEM
+from compass.prompts.challenge_v1 import PROMPT as CHALLENGE_V1_PROMPT
+from compass.prompts.challenge_v1 import SYSTEM as CHALLENGE_V1_SYSTEM
+from compass.prompts.dashboard_v1 import PROMPT as DASHBOARD_V1_PROMPT
+from compass.prompts.dashboard_v1 import SYSTEM as DASHBOARD_V1_SYSTEM
+from compass.prompts.discover_v1 import PROMPT as DISCOVER_V1_PROMPT
+from compass.prompts.discover_v1 import SYSTEM as DISCOVER_V1_SYSTEM
+from compass.prompts.experiment_v1 import PROMPT as EXPERIMENT_V1_PROMPT
+from compass.prompts.experiment_v1 import SYSTEM as EXPERIMENT_V1_SYSTEM
+from compass.prompts.plan_week_v1 import PROMPT as PLAN_WEEK_V1_PROMPT
+from compass.prompts.plan_week_v1 import SYSTEM as PLAN_WEEK_V1_SYSTEM
+from compass.prompts.present_v1 import SYSTEM as PRESENT_V1_SYSTEM
+from compass.prompts.present_v1 import USER as PRESENT_V1_PROMPT
+from compass.prompts.prototype_v1 import SYSTEM as PROTOTYPE_V1_SYSTEM
+from compass.prompts.prototype_v1 import USER as PROTOTYPE_V1_PROMPT
+from compass.prompts.reconcile_v1 import PROMPT as RECONCILE_V1_PROMPT
+from compass.prompts.reconcile_v1 import SYSTEM as RECONCILE_V1_SYSTEM
+from compass.prompts.specify_v1 import PROMPT as SPECIFY_V1_PROMPT
+from compass.prompts.specify_v1 import SYSTEM as SPECIFY_V1_SYSTEM
+from compass.prompts.write_brief_v1 import PROMPT as WRITE_BRIEF_V1_PROMPT
+from compass.prompts.write_brief_v1 import SYSTEM as WRITE_BRIEF_V1_SYSTEM
+from compass.prompts.write_update_v1 import PROMPT as WRITE_UPDATE_V1_PROMPT
+from compass.prompts.write_update_v1 import SYSTEM as WRITE_UPDATE_V1_SYSTEM
 
 # Default prompt version
 DEFAULT_VERSION = "v1"

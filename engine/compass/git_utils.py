@@ -42,7 +42,7 @@ def init_git_repo(workspace_path: Path) -> bool:
     Returns True if a new repo was created, False if one already existed.
     """
     try:
-        from git import Repo, InvalidGitRepositoryError
+        from git import InvalidGitRepositoryError, Repo
     except ImportError:
         logger.warning("gitpython not installed, skipping git init")
         return False
@@ -74,7 +74,7 @@ def init_git_repo(workspace_path: Path) -> bool:
         logger.info("Initialized git repo at %s", workspace_path)
         return True
     except Exception as e:
-        logger.warning("Failed to initialize git repo at %s: %s", workspace_path, e)
+        logger.warning("Failed to initialize git repo at %s: %s", workspace_path, e, exc_info=True)
         return False
 
 
@@ -91,7 +91,7 @@ def push_to_github(workspace_path: Path, repo_name: str, token: str, private: bo
         Dict with status, repo_url, and any error.
     """
     try:
-        from git import Repo, InvalidGitRepositoryError
+        from git import InvalidGitRepositoryError, Repo
     except ImportError:
         return {"status": "error", "error": "gitpython not installed"}
 
@@ -152,5 +152,5 @@ def push_to_github(workspace_path: Path, repo_name: str, token: str, private: bo
         return {"status": "ok", "repo_url": html_url, "clone_url": clone_url}
 
     except Exception as e:
-        logger.warning("Failed to push to GitHub: %s", e)
+        logger.warning("Failed to push to GitHub: %s", e, exc_info=True)
         return {"status": "error", "error": f"Push failed: {e}"}

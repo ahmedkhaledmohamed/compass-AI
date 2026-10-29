@@ -37,9 +37,7 @@ class SlackConnector(LiveConnector):
         path = self.config.path
         if path and Path(path).expanduser().is_dir():
             return True
-        if self.has_credentials():
-            return True
-        return False
+        return bool(self.has_credentials())
 
     # ------------------------------------------------------------------
     # Live API ingestion
@@ -68,7 +66,7 @@ class SlackConnector(LiveConnector):
                 return self.ingest_file()
             channels = data.get("channels", [])
         except Exception as e:
-            logger.warning("Failed to fetch Slack channels: %s", e)
+            logger.warning("Failed to fetch Slack channels: %s", e, exc_info=True)
             return self.ingest_file()
 
         for channel in channels[:MAX_CHANNELS]:
@@ -85,7 +83,7 @@ class SlackConnector(LiveConnector):
                     continue
                 messages = history.get("messages", [])
             except Exception as e:
-                logger.debug("Failed to fetch history for #%s: %s", channel_name, e)
+                logger.debug("Failed to fetch history for #%s: %s", channel_name, e, exc_info=True)
                 continue
 
             # Filter bot/system messages
@@ -155,7 +153,7 @@ class SlackConnector(LiveConnector):
                             },
                         ))
             except Exception as e:
-                logger.debug("Slack search failed: %s", e)
+                logger.debug("Slack search failed: %s", e, exc_info=True)
 
         logger.info("Slack live: fetched %d evidence items", len(evidence))
         return evidence

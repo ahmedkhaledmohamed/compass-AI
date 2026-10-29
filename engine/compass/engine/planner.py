@@ -7,6 +7,7 @@ and conflict state into an actionable weekly plan.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask_json
 from compass.models.planning import ConfidenceChange, FocusArea, WeeklyPlan
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.prompts import DEFAULT_VERSION, get_prompts
+
+logger = logging.getLogger(__name__)
 
 
 class Planner:
@@ -113,7 +116,7 @@ class Planner:
                     f"Average opportunities: {hist.get('avg_opportunities', 0):.1f}"
                 )
         except Exception:
-            pass
+            logger.debug("Could not load optional workflow data for the weekly plan.", exc_info=True)
 
         with Progress(
             SpinnerColumn(),

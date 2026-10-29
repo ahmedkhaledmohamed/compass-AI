@@ -15,7 +15,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.llm import ask_json
 from compass.models.challenges import Challenge
-from compass.prompts import get_prompts, DEFAULT_VERSION
+from compass.prompts import DEFAULT_VERSION, get_prompts
 
 
 class Challenger:

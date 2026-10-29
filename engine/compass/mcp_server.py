@@ -10,11 +10,14 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
     "Compass",
@@ -150,6 +153,7 @@ def compass_ingest() -> str:
             total += len(evidence)
             results.append(f"- {source.name}: {len(evidence)} items")
         except Exception as e:
+            logger.debug("Source ingestion failed; retaining results from other sources.", exc_info=True)
             results.append(f"- {source.name}: ERROR — {e}")
 
     return f"# Ingestion Complete\n\n**{total} evidence items** from {len(config.sources)} sources:\n\n" + "\n".join(results)
@@ -230,8 +234,8 @@ def compass_discover() -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.reconciler import Reconciler
     from compass.engine.discoverer import Discoverer
+    from compass.engine.reconciler import Reconciler
 
     reconciler = Reconciler(kg, model=config.model)
     report = reconciler.reconcile()
@@ -291,12 +295,12 @@ def compass_specify(opportunity_title: str) -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.specifier import Specifier
-    from compass.models.specs import Opportunity, Confidence
     import json
 
     # Try to find cached opportunity
     from compass.config import get_compass_dir
+    from compass.engine.specifier import Specifier
+    from compass.models.specs import Confidence, Opportunity
     compass_dir = get_compass_dir(workspace)
     cache_path = compass_dir / "opportunities_cache.json"
     opportunity = None
@@ -309,7 +313,7 @@ def compass_specify(opportunity_title: str) -> str:
                     opportunity = Opportunity(**opp_data)
                     break
         except Exception:
-            pass
+            logger.debug("Could not attach a generated specification to the workspace.", exc_info=True)
 
     if not opportunity:
         opportunity = Opportunity(
@@ -452,6 +456,7 @@ def compass_refresh(source_name: str = "") -> str:
             kg.add_many(evidence)
             results.append(f"- {source.name}: removed {removed}, added {len(evidence)}")
         except Exception as e:
+            logger.debug("Source refresh failed; retaining results from other sources.", exc_info=True)
             results.append(f"- {source.name}: ERROR — {e}")
 
     return f"# Refresh Complete\n\n**Total evidence:** {len(kg)} items\n\n" + "\n".join(results)
@@ -509,10 +514,10 @@ def compass_challenge(opportunity_title: str) -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.challenger import Challenger
     import json
 
     from compass.config import get_compass_dir
+    from compass.engine.challenger import Challenger
     compass_dir = get_compass_dir(workspace)
 
     # Try to find cached opportunity
@@ -528,7 +533,7 @@ def compass_challenge(opportunity_title: str) -> str:
                     evidence_summary = opp_data.get("evidence_summary", "")
                     break
         except Exception:
-            pass
+            logger.debug("Could not attach challenge evidence to the workspace.", exc_info=True)
 
     challenger = Challenger(kg, model=config.model)
     result = challenger.challenge(
@@ -582,8 +587,8 @@ def compass_plan_week() -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.planner import Planner
     from compass.config import get_compass_dir
+    from compass.engine.planner import Planner
 
     compass_dir = get_compass_dir(workspace)
     planner = Planner(kg, model=config.model)
@@ -613,10 +618,10 @@ def compass_experiment(opportunity_title: str) -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.experimenter import Experimenter
     import json
 
     from compass.config import get_compass_dir
+    from compass.engine.experimenter import Experimenter
     compass_dir = get_compass_dir(workspace)
 
     # Try to find cached opportunity
@@ -632,7 +637,7 @@ def compass_experiment(opportunity_title: str) -> str:
                     evidence_summary = opp_data.get("evidence_summary", "")
                     break
         except Exception:
-            pass
+            logger.debug("Could not attach the experiment to the workspace.", exc_info=True)
 
     experimenter = Experimenter(kg, model=config.model)
     result = experimenter.design_experiment(
@@ -663,11 +668,11 @@ def compass_write_brief(opportunity_title: str) -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.writer import Writer
     import json
 
     # Try to find cached opportunity for richer context
     from compass.config import get_compass_dir
+    from compass.engine.writer import Writer
     compass_dir = get_compass_dir(workspace)
     cache_path = compass_dir / "opportunities_cache.json"
     description = ""
@@ -682,7 +687,7 @@ def compass_write_brief(opportunity_title: str) -> str:
                     evidence_summary = opp_data.get("evidence_summary", "")
                     break
         except Exception:
-            pass
+            logger.debug("Could not attach the brief to the workspace.", exc_info=True)
 
     writer = Writer(kg, model=config.model)
     brief = writer.write_brief(
@@ -712,8 +717,8 @@ def compass_write_update(days: int = 7) -> str:
         return "No evidence ingested. Run `compass ingest` first."
 
     config = _get_config(workspace)
-    from compass.engine.writer import Writer
     from compass.config import get_compass_dir
+    from compass.engine.writer import Writer
 
     compass_dir = get_compass_dir(workspace)
     writer = Writer(kg, model=config.model)

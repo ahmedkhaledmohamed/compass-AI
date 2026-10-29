@@ -48,6 +48,7 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm run test:secrets
 
   app-build:
     name: App Build (vite)

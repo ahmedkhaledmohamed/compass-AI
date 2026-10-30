@@ -152,16 +152,23 @@ class EvidenceRepository:
 
         self.update(change)
 
-    def replace_source(self, source_name: str, items: list[Evidence]) -> None:
+    def replace_source(self, source_name: str, items: list[Evidence], source_id: str = "", legacy_names: list[str] | None = None) -> None:
         """Commit a completed source import without touching another source."""
         if not source_name:
             raise ValueError("A source name is required")
 
+        names = set(legacy_names or []) if source_id else {source_name}
+
+        def belongs(item: Evidence) -> bool:
+            if source_id and item.source_id:
+                return item.source_id == source_id
+            return item.source_name in names
+
         def change(current: list[Evidence]) -> list[Evidence]:
-            retained = [item for item in current if item.source_name != source_name]
+            retained = [item for item in current if not belongs(item)]
             retained_ids = {item.id for item in retained}
             if any(item.id in retained_ids for item in items):
                 raise ValueError("Evidence ID belongs to another source")
-            return retained + [item.model_copy(update={"source_name": source_name}) for item in items]
+            return retained + [item.model_copy(update={"source_name": source_name, **({"source_id": source_id} if source_id else {})}) for item in items]
 
         self.update(change)

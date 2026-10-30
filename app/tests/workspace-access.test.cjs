@@ -18,8 +18,10 @@ function fixture(t){
   }
   if(endpoint==='/workspace/info')return {status:'ok',...configs.get(body.workspace_path)};
   if(endpoint==='/connect'){
-   const config=configs.get(body.workspace_path);config.sources=config.sources.filter(s=>s.name!==body.name);
-   config.sources.push({name:body.name,type:body.source_type,path:body.path,url:null,options:{},auth:null});return {status:'ok',accessible:true};
+   const config=configs.get(body.workspace_path);
+   const id=body.source_id||'src_'+String(calls.length).padStart(32,'0');
+   config.sources=config.sources.filter(s=>s.id!==id && s.name!==body.name);
+   config.sources.push({id,name:body.name,type:body.source_type,path:body.path,url:null,options:{},auth:null});return {status:'ok',source_id:id,accessible:true};
   }
   return {status:'ok',body};
  };
@@ -128,4 +130,13 @@ test('legacy evidence symlinks cannot migrate outside data through an approved w
  const before=f.calls.length;
  await assert.rejects(f.access.request('/tasks/list',{workspace_path:record.id}),/symbolic/);
  assert.equal(f.calls.length,before);
+});
+
+test('a different configured source identity cannot reuse an existing source approval',async t=>{
+ const f=fixture(t),{record,folderPath}=await f.create();const docs=f.folder('docs');f.choices.push(docs);
+ const selection=await f.access.choose('source','directory');
+ const result=await f.access.request('/connect',{workspace_path:record.id,source_type:'docs',name:'Docs',path:selection.id,new_source:true});
+ assert.match(result.source_id,/^src_/);
+ f.configs.get(folderPath).sources[0].id='src_'+'f'.repeat(32);
+ await assert.rejects(f.access.request('/ingest',{workspace_path:record.id}),/Select each source again/);
 });

@@ -36,8 +36,8 @@ class KnowledgeGraph:
         if items:
             self._repository.upsert(items)
 
-    def replace_source(self, source_name: str, items: list[Evidence]) -> None:
-        self._repository.replace_source(source_name, items)
+    def replace_source(self, source_name: str, items: list[Evidence], source_id: str = "", legacy_names: list[str] | None = None) -> None:
+        self._repository.replace_source(source_name, items, source_id=source_id, legacy_names=legacy_names)
 
     def _index(self, snapshot_id: str, items: list[Evidence]):
         """Retry incomplete builds against the immutable canonical snapshot.

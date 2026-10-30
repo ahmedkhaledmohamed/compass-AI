@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import os
+import re
+import tempfile
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 COMPASS_DIR = ".compass"
 CONFIG_FILE = "compass.yaml"
@@ -29,12 +32,23 @@ class AuthConfig(BaseModel):
 class SourceConfig(BaseModel):
     """Configuration for a single evidence source."""
 
+    id: str = ""
+    legacy_names: list[str] = Field(default_factory=list)
     type: str  # code, docs, data, interviews, support
     name: str
     path: str | None = None
     url: str | None = None
     options: dict = Field(default_factory=dict)
     auth: AuthConfig | None = None
+
+    @model_validator(mode="after")
+    def stable_identity(self):
+        if not self.id:
+            self.legacy_names = list(dict.fromkeys([*self.legacy_names, self.name]))
+            self.id = "src_" + uuid5(NAMESPACE_URL, f"compass-source:{self.type}:{self.name}").hex
+        if not re.fullmatch(r"src_[a-f0-9]{32}", self.id):
+            raise ValueError("Invalid source identity")
+        return self
 
 
 class ProductConfig(BaseModel):
@@ -45,10 +59,23 @@ class ProductConfig(BaseModel):
     sources: list[SourceConfig] = Field(default_factory=list)
     model: str = "claude-sonnet-4-20250514"
 
+    @model_validator(mode="after")
+    def unique_sources(self):
+        if len({source.id for source in self.sources}) != len(self.sources) or len({source.name for source in self.sources}) != len(self.sources):
+            raise ValueError("Source identities and names must be distinct within a workspace")
+        return self
+
     def add_source(self, source: SourceConfig) -> None:
-        existing = [s for s in self.sources if s.name == source.name]
+        existing = next((item for item in self.sources if item.id == source.id), None)
+        if existing is None:
+            existing = next((item for item in self.sources if item.name == source.name), None)
+            if existing:
+                source.id = existing.id  # Preserve identity for existing CLI/name-based reconnects.
         if existing:
-            self.sources = [s if s.name != source.name else source for s in self.sources]
+            if any(item.name == source.name and item.id != existing.id for item in self.sources):
+                raise ValueError("Another source already uses this name")
+            source.legacy_names = list(dict.fromkeys([*existing.legacy_names, *source.legacy_names]))
+            self.sources = [source if item.id == existing.id else item for item in self.sources]
         else:
             self.sources.append(source)
 
@@ -81,8 +108,17 @@ def load_config(base: Path | None = None) -> ProductConfig:
 def save_config(config: ProductConfig, base: Path | None = None) -> Path:
     """Save product config to .compass/compass.yaml."""
     config_path = get_compass_dir(base) / CONFIG_FILE
-    with open(config_path, "w") as f:
-        yaml.dump(config.model_dump(), f, default_flow_style=False, sort_keys=False)
+    descriptor, temporary = tempfile.mkstemp(prefix=".config-", dir=config_path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(config.model_dump(), handle, default_flow_style=False, sort_keys=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, config_path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
     return config_path
 
 

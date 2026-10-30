@@ -14,6 +14,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator
 from dataclasses import dataclass
 
+from compass.engine.provider_transport import (
+    Completion,
+    HTTPInference,
+    ProviderError,
+    RequestControl,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,25 +28,31 @@ logger = logging.getLogger(__name__)
 class TokenUsage:
     input_tokens: int = 0
     output_tokens: int = 0
+    usage_complete: bool = True
 
     @property
     def total(self) -> int:
         return self.input_tokens + self.output_tokens
 
     @property
-    def estimated_cost_usd(self) -> float:
-        return (self.input_tokens * 3.0 + self.output_tokens * 15.0) / 1_000_000
+    def estimated_cost_usd(self) -> float | None:
+        # Model, account billing and serving provider prices are not verified.
+        return None
 
-    def record(self, input_t: int, output_t: int) -> None:
-        self.input_tokens += input_t
-        self.output_tokens += output_t
+    def record(self, input_t: int | None, output_t: int | None) -> None:
+        self.usage_complete = self.usage_complete and input_t is not None and output_t is not None
+        if input_t is not None:
+            self.input_tokens += input_t
+        if output_t is not None:
+            self.output_tokens += output_t
 
     def to_dict(self) -> dict:
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "total_tokens": self.total,
-            "estimated_cost_usd": round(self.estimated_cost_usd, 4),
+            "estimated_cost_usd": self.estimated_cost_usd,
+            "usage_complete": self.usage_complete,
         }
 
 
@@ -56,6 +69,16 @@ class LLMProvider(ABC):
     ) -> tuple[str, int, int]:
         """Returns (response_text, input_tokens, output_tokens)."""
         ...
+
+    def complete_controlled(self, prompt, system, model, max_tokens, control):
+        # Compatibility for local/custom providers. Official network providers
+        # override this with the cancellable, total-deadline HTTP transport.
+        if control.cancelled():
+            raise ProviderError("cancelled")
+        text, inp, out = self.complete(prompt, system, model, max_tokens)
+        if control.cancelled():
+            raise ProviderError("cancelled")
+        return Completion(text, model, type(self).__name__, inp, out)
 
     def complete_stream(
         self,
@@ -91,7 +114,16 @@ class AnthropicProvider(LLMProvider):
         kwargs: dict = {"api_key": key}
         if url:
             kwargs["base_url"] = url
+        self._credential = key
+        self._custom_base_url = bool(url)
         self._client = Anthropic(**kwargs)
+
+    def complete_controlled(self, prompt, system, model, max_tokens, control):
+        if self._custom_base_url:
+            raise ProviderError("unsupported")
+        return HTTPInference("anthropic", self._credential).complete(
+            prompt, system, model or self.DEFAULT_MODEL, max_tokens, control,
+        )
 
     def complete(
         self,
@@ -131,12 +163,29 @@ class AnthropicProvider(LLMProvider):
             return (msg.usage.input_tokens, msg.usage.output_tokens)
 
 
+class ConnectedHTTPProvider(LLMProvider):
+    """User-selected OpenRouter, Hugging Face or ChatGPT inference route."""
+
+    def __init__(self, provider, credential, serving_provider=""):
+        self.transport = HTTPInference(provider, credential, serving_provider)
+
+    def complete_controlled(self, prompt, system, model, max_tokens, control):
+        return self.transport.complete(prompt, system, model, max_tokens, control)
+
+    def complete(self, prompt, system="", model="", max_tokens=4096):
+        result = self.complete_controlled(prompt, system, model, max_tokens, RequestControl())
+        return result.text, result.input_tokens, result.output_tokens
+
+
 class CompassCloudProvider(LLMProvider):
     """Proxies calls through Compass Cloud API (auth + metering)."""
 
     def __init__(self, cloud_url: str = "", auth_token: str = ""):
         self.cloud_url = cloud_url or os.environ.get("COMPASS_CLOUD_URL", "https://api.compass.dev")
         self.auth_token = auth_token or os.environ.get("COMPASS_AUTH_TOKEN", "")
+
+    def complete_controlled(self, prompt, system, model, max_tokens, control):
+        raise ProviderError("unsupported")
 
     def complete(
         self,
@@ -204,32 +253,34 @@ class Orchestrator:
 
     def __init__(self, provider: LLMProvider | None = None, default_model: str = ""):
         self.provider = provider or _create_default_provider()
-        self.default_model = default_model
+        self.default_model = default_model or os.environ.get("COMPASS_MODEL", "")
         self.usage = TokenUsage()
 
     def ask(
-        self,
-        prompt: str,
-        system: str = "",
-        model: str = "",
-        max_tokens: int = 4096,
+        self, prompt: str, system: str = "", model: str = "", max_tokens: int = 4096,
+        *, control: RequestControl | None = None, on_completion=None,
     ) -> str:
-        text, inp, out = self.provider.complete(
-            prompt, system, model or self.default_model, max_tokens
-        )
+        if control is not None:
+            try:
+                result = self.provider.complete_controlled(prompt, system, model or self.default_model, max_tokens, control)
+            except ProviderError as exc:
+                if exc.completion:
+                    self.usage.record(exc.completion["input_tokens"], exc.completion["output_tokens"])
+                raise
+            text, inp, out = result.text, result.input_tokens, result.output_tokens
+            if on_completion:
+                on_completion(result)
+        else:
+            text, inp, out = self.provider.complete(prompt, system, model or self.default_model, max_tokens)
         self.usage.record(inp, out)
         return text
 
     def ask_json(
-        self,
-        prompt: str,
-        system: str = "",
-        model: str = "",
-        max_tokens: int = 4096,
+        self, prompt: str, system: str = "", model: str = "", max_tokens: int = 4096,
+        *, control: RequestControl | None = None, on_completion=None,
     ) -> dict | list:
         full_prompt = prompt + "\n\nRespond with valid JSON only. No markdown fences, no explanation."
-        text = self.ask(full_prompt, system, model, max_tokens)
-
+        text = self.ask(full_prompt, system, model, max_tokens, control=control, on_completion=on_completion)
         return _extract_json(text)
 
     def ask_stream(
@@ -308,6 +359,7 @@ def configure_orchestrator(
     model: str = "",
     provider: str = "anthropic",
     base_url: str = "",
+    inference_provider: str = "",
 ) -> Orchestrator:
     """Reconfigure the global orchestrator with new settings.
 
@@ -324,14 +376,21 @@ def configure_orchestrator(
     # Preserve existing usage if we're reconfiguring
     existing_usage = _instance.usage if _instance else TokenUsage()
 
-    if provider == "cloud":
+    if provider in ("openrouter", "huggingface", "chatgpt"):
+        if not model:
+            raise ProviderError("invalid_request")
+        llm_provider = ConnectedHTTPProvider(provider, api_key, inference_provider)
+    elif provider == "cloud":
         llm_provider = CompassCloudProvider()
     elif provider == "compass":
         # App-provided mode: use environment key, ignore api_key param
         llm_provider = AnthropicProvider(base_url=base_url or None)
-    else:
+    elif provider == "anthropic":
         # BYOK mode: use the user-supplied key
         llm_provider = AnthropicProvider(api_key=api_key or None, base_url=base_url or None)
+
+    else:
+        raise ValueError("Unsupported AI provider")
 
     _instance = Orchestrator(provider=llm_provider, default_model=model)
     _instance.usage = existing_usage
@@ -354,4 +413,11 @@ def _create_default_provider() -> LLMProvider:
     provider_name = os.environ.get("COMPASS_LLM_PROVIDER", "anthropic").lower()
     if provider_name == "cloud":
         return CompassCloudProvider()
+    if provider_name in ("openrouter", "huggingface", "chatgpt"):
+        variable = {"openrouter": "OPENROUTER_API_KEY", "huggingface": "HF_TOKEN",
+                    "chatgpt": "COMPASS_CHATGPT_ACCESS_TOKEN"}[provider_name]
+        return ConnectedHTTPProvider(provider_name, os.environ.get(variable, ""),
+                                     os.environ.get("COMPASS_INFERENCE_PROVIDER", ""))
+    if provider_name not in ("anthropic", "compass"):
+        raise ValueError("Unsupported AI provider")
     return AnthropicProvider()

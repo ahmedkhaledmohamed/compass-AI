@@ -140,3 +140,15 @@ test('a different configured source identity cannot reuse an existing source app
  f.configs.get(folderPath).sources[0].id='src_'+'f'.repeat(32);
  await assert.rejects(f.access.request('/ingest',{workspace_path:record.id}),/Select each source again/);
 });
+
+test('import jobs check only explicitly selected sources and retain workspace scoping',async t=>{
+ const f=fixture(t),{record,folderPath}=await f.create();const docs=f.folder('docs');f.choices.push(docs);
+ const selection=await f.access.choose('source','directory');
+ const source=await f.access.request('/connect',{workspace_path:record.id,source_type:'docs',name:'Chosen',path:selection.id});
+ f.configs.get(folderPath).sources.push({id:'src_'+'e'.repeat(32),name:'Unapproved sibling',type:'docs',path:'/fictional/unapproved'});
+ const result=await f.access.request('/imports/start',{workspace_path:record.id,source_ids:[source.source_id],request_id:'explicit'});
+ assert.equal(result.status,'ok');assert.equal(f.calls.at(-1).body.workspace_path,folderPath);
+ await assert.rejects(f.access.request('/imports/start',{workspace_path:record.id,source_ids:['src_'+'e'.repeat(32)],request_id:'unapproved'}),/Select each source again/);
+ await assert.rejects(f.access.request('/imports/start',{workspace_path:record.id,source_ids:[],request_id:'empty'}),/Select distinct/);
+ await assert.rejects(f.access.request('/imports/start',{workspace_path:record.id,source_ids:[source.source_id,source.source_id],request_id:'duplicate'}),/Select distinct/);
+});

@@ -2,12 +2,30 @@
 
 import hashlib
 import json
+from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 
 from compass.config import SourceConfig
 from compass.connectors import get_connector
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.models.sources import Evidence
+
+
+@contextmanager
+def _workspace_lease(kg):
+    directory = kg._persist_dir
+    if directory is None or Path(directory).name != "knowledge" or Path(directory).parent.name != ".compass":
+        yield
+        return
+    from compass.engine.task_jobs import get_job_manager
+    from compass.engine.task_repository import TaskRepository
+    manager = get_job_manager()
+    workspace = manager.reserve_import(TaskRepository(Path(directory).resolve().parent.parent))
+    try:
+        yield
+    finally:
+        manager.release_import(workspace)
 
 
 def import_source(kg: KnowledgeGraph, source: SourceConfig) -> list[Evidence]:
@@ -16,12 +34,23 @@ def import_source(kg: KnowledgeGraph, source: SourceConfig) -> list[Evidence]:
     Empty imports fail closed: unsupported files or lost access must not look
     like a successful deletion. Explicit source deletion is a separate action.
     """
+    with _workspace_lease(kg):
+        return _fetch_and_replace(kg, source)
+
+
+def _fetch_and_replace(kg, source):
     connector = get_connector(source.type)(source)
     if not connector.validate():
         raise ValueError("Source is inaccessible; previous evidence was retained")
     items = connector.ingest()
     if not items:
         raise ValueError("Source returned no evidence; previous evidence was retained")
+    prepared = prepare_evidence(source, items)
+    kg.replace_source(source.name, prepared, source_id=source.id, legacy_names=source.legacy_names)
+    return prepared
+
+
+def prepare_evidence(source: SourceConfig, items: list[Evidence]) -> list[Evidence]:
     now = datetime.now()
     prepared = []
     occurrences: dict[str, int] = {}
@@ -39,7 +68,6 @@ def import_source(kg: KnowledgeGraph, source: SourceConfig) -> list[Evidence]:
         }))
     if any(not item.content.strip() for item in prepared):
         raise ValueError("Source returned empty evidence content; previous evidence was retained")
-    kg.replace_source(source.name, prepared, source_id=source.id, legacy_names=source.legacy_names)
     return prepared
 
 

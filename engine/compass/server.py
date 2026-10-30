@@ -33,6 +33,7 @@ from compass.config import (
 )
 from compass.connectors import get_connector
 from compass.engine.discoverer import Discoverer
+from compass.engine.import_jobs import close_import_manager
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.orchestrator import (
     configure_orchestrator,
@@ -45,6 +46,8 @@ from compass.engine.reconciler import Reconciler
 from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
 from compass.engine.task_jobs import close_job_manager, get_job_manager
+from compass.engine.task_repository import TaskRepository
+from compass.import_api import router as import_router
 from compass.task_api import router as task_router
 
 logger = logging.getLogger(__name__)
@@ -62,11 +65,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        close_import_manager()
         close_job_manager()
 
 
 app = FastAPI(title="Compass Engine", version="0.1.0", lifespan=lifespan)
 app.include_router(task_router)
+app.include_router(import_router)
 
 @app.middleware("http")
 async def authenticate_engine_request(request: Request, call_next):
@@ -317,6 +322,8 @@ def workspace_info(req: WorkspaceRequest):
 @app.post("/connect")
 def connect_source(req: ConnectRequest):
     base = Path(req.workspace_path)
+    if get_job_manager().busy_workspace(TaskRepository(base)):
+        raise HTTPException(409, "Finish or cancel the active import or generation before changing a source")
     config = load_config(base)
     existing = next((item for item in config.sources if item.id == req.source_id), None) if req.source_id else None
     if req.source_id and existing is None:
@@ -345,6 +352,8 @@ def connect_source(req: ConnectRequest):
 def ingest(req: WorkspaceRequest):
     global _kg, _kg_workspace_path
     base = Path(req.workspace_path)
+    if get_job_manager().busy_workspace(TaskRepository(base)):
+        raise HTTPException(409, "Finish or cancel the active workspace operation before importing")
     config = load_config(base)
 
     if not config.sources:
@@ -388,6 +397,8 @@ class RefreshRequest(BaseModel):
 def refresh(req: RefreshRequest):
     global _kg, _kg_workspace_path
     base = Path(req.workspace_path)
+    if get_job_manager().busy_workspace(TaskRepository(base)):
+        raise HTTPException(409, "Finish or cancel the active workspace operation before refreshing")
     config = load_config(base)
     compass_dir = get_compass_dir(base)
 

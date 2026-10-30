@@ -72,6 +72,7 @@ class JobManager:
         self._futures: dict[tuple[str, str], Future] = {}
         self._timers: dict[tuple[str, str], Timer] = {}
         self._closed = False
+        self._imports: set[str] = set()
 
     def _own(self, repository: TaskRepository) -> str:
         workspace = str(repository.path.parent.resolve())
@@ -122,6 +123,8 @@ class JobManager:
                     raise TaskConflict("A previous provider request is still running or stopping in this workspace")
                 if sum(not future.done() for future in self._futures.values()) >= 8:
                     raise TaskConflict("The generation queue is full. Wait for a running request to finish.")
+                if workspace in self._imports:
+                    raise TaskConflict("Finish or cancel the active import before generating a draft")
                 task = repository._read(db, task_id)
                 if task.revision != expected_revision:
                     raise TaskConflict("Task changed. Reload before generating.")
@@ -256,13 +259,32 @@ class JobManager:
 
     def _release_idle_locks(self):
         for workspace, fd in list(self._locks.items()):
-            if not any(key[0] == workspace and not future.done() for key, future in self._futures.items()):
+            if workspace not in self._imports and not any(key[0] == workspace and not future.done() for key, future in self._futures.items()):
                 os.close(fd)
                 del self._locks[workspace]
 
     def busy(self):
         with self._mutex:
-            return any(not future.done() for future in self._futures.values())
+            return bool(self._imports) or any(not future.done() for future in self._futures.values())
+
+    def reserve_import(self, repository):
+        workspace = self._own(repository)
+        with self._mutex:
+            if workspace in self._imports or any(key[0] == workspace and not future.done() for key, future in self._futures.items()):
+                raise TaskConflict("Finish or cancel the active workspace operation before importing")
+            self._imports.add(workspace)
+        return workspace
+
+    def release_import(self, workspace):
+        with self._mutex:
+            self._imports.discard(workspace)
+            if self._closed:
+                self._release_idle_locks()
+
+    def busy_workspace(self, repository):
+        workspace = str(repository.path.parent.resolve())
+        with self._mutex:
+            return workspace in self._imports or any(key[0] == workspace and not future.done() for key, future in self._futures.items())
 
     def close(self):
         with self._mutex:

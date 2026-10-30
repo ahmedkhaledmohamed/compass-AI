@@ -21,6 +21,8 @@ export interface Artifact {
   decision: string;
   model: string;
   provider: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
   edited_by_user: boolean;
 }
 export interface DecisionTask {

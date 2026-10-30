@@ -32,6 +32,7 @@ from compass.connectors import get_connector
 from compass.engine.discoverer import Discoverer
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
+from compass.engine.provider_transport import ProviderError
 from compass.engine.reconciler import Reconciler
 from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
@@ -125,6 +126,7 @@ class ConfigureRequest(BaseModel):
     api_key: str = ""
     model: str = ""
     provider: str = "anthropic"
+    inference_provider: str = ""
 
 
 class InjectCredentialRequest(BaseModel):
@@ -152,7 +154,8 @@ def usage():
         "status": "ok",
         "session_tokens": {"input": u.input_tokens, "output": u.output_tokens},
         "total_tokens": u.total,
-        "total_cost_estimate": f"${u.estimated_cost_usd:.4f}",
+        "total_cost_estimate": "Not estimated",
+        "usage_complete": u.usage_complete,
     }
 
 
@@ -166,12 +169,15 @@ def configure(req: ConfigureRequest):
             api_key=req.api_key,
             model=req.model,
             provider=req.provider,
+            inference_provider=req.inference_provider,
         )
         return {
             "status": "ok",
             "provider": req.provider,
             "model": req.model or orch.default_model,
         }
+    except ProviderError as exc:
+        return JSONResponse(status_code=422, content={"status": "error", "code": exc.code, "message": str(exc)})
     except ValueError as e:
         raise HTTPException(400, str(e))
 

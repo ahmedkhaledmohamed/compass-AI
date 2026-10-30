@@ -148,14 +148,25 @@ class TaskService:
                   "Draft a specification handoff for the human's chosen direction. Put proposed requirements and acceptance criteria in proposal claims; mark unverified implementation details as unknown. ")
         prompt += "\nOutput schema:\n" + json.dumps(DraftBody.model_json_schema())
         prompt += "\nTask and evidence data:\n" + context
+        completion = None
+
+        def completed(result):
+            nonlocal completion
+            completion = result
+            job.record_completion(result)
+
         job.stage("generating")
-        raw = orchestrator.ask_json(prompt, system=SYSTEM, model=orchestrator.default_model, max_tokens=8000)
+        raw = orchestrator.ask_json(prompt, system=SYSTEM, model=orchestrator.default_model, max_tokens=8000,
+                                    control=job.control(), on_completion=completed)
         job.stage("validating_output")
         body = DraftBody.model_validate(raw)
         self.validate_body(task, body)
         artifact = Artifact(
             body=body, reviews=["unreviewed"] * len(body.claims),
-            model=orchestrator.default_model, provider=type(orchestrator.provider).__name__,
+            model=completion.model if completion else orchestrator.default_model,
+            provider=completion.provider if completion else type(orchestrator.provider).__name__,
+            input_tokens=completion.input_tokens if completion else None,
+            output_tokens=completion.output_tokens if completion else None,
         )
 
         def save(current: Task):
@@ -175,6 +186,7 @@ class TaskService:
             setattr(task, kind, Artifact(
                 body=body, reviews=["unreviewed"] * len(body.claims),
                 model=previous.model, provider=previous.provider, edited_by_user=True,
+                input_tokens=previous.input_tokens, output_tokens=previous.output_tokens,
             ))
             if kind == "brief":
                 task.handoff = None

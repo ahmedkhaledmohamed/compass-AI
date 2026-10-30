@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -10,6 +11,7 @@ from pathlib import Path
 from threading import RLock, Timer
 from uuid import uuid4
 
+from compass.engine.provider_transport import ProviderError, RequestControl
 from compass.engine.task_repository import TaskConflict, TaskNotFound, TaskRepository
 
 ACTIVE = ("queued", "running")
@@ -37,6 +39,22 @@ class JobContext:
             check_job(db, self.id)
             db.execute("UPDATE jobs SET stage=?, updated_at=? WHERE id=?",
                        (stage, time.time(), self.id))
+
+    def control(self):
+        with self.repository._connect() as db:
+            deadline = db.execute("SELECT deadline FROM jobs WHERE id=?", (self.id,)).fetchone()[0]
+
+        def cancelled():
+            with self.repository._connect() as db:
+                row = db.execute("SELECT state FROM jobs WHERE id=?", (self.id,)).fetchone()
+            return row is None or row[0] not in ACTIVE
+
+        return RequestControl(max(0, min(300, deadline - time.time())), cancelled)
+
+    def record_completion(self, completion):
+        with self.repository._connect() as db:
+            db.execute("UPDATE jobs SET completion=? WHERE id=?",
+                       (json.dumps(completion.metadata()), self.id))
 
 
 class JobManager:
@@ -146,7 +164,12 @@ class JobManager:
         except Exception as exc:
             from compass.engine.task_service import ContextBudgetExceeded
             code, message = "provider_error", "The AI request failed. Check the selected connection and try again."
-            if isinstance(exc, TaskConflict):
+            if isinstance(exc, ProviderError):
+                code, message = exc.code, str(exc)
+                if exc.completion:
+                    with repository._connect() as db:
+                        db.execute("UPDATE jobs SET completion=? WHERE id=?", (json.dumps(exc.completion), job_id))
+            elif isinstance(exc, TaskConflict):
                 code, message = "task_changed", "Task or evidence changed during generation. Reload before trying again."
             elif isinstance(exc, ContextBudgetExceeded):
                 code, message = "context_limit", "Selected evidence exceeds the context limit. Select fewer sources; nothing was silently omitted."
@@ -185,6 +208,7 @@ class JobManager:
             result = dict(row)
         future = self._futures.get((workspace, job_id))
         result["draining"] = bool(future and not future.done() and result["state"] in ("cancelled", "timed_out", "interrupted"))
+        result["completion"] = json.loads(result["completion"]) if result["completion"] else None
         result.pop("request_id", None)
         return result
 

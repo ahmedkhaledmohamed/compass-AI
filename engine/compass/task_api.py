@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from compass.config import load_config
+from compass.engine.provider_transport import ProviderError
 from compass.engine.task_jobs import JobStopped, get_job_manager
 from compass.engine.task_repository import TaskConflict, TaskNotFound
 from compass.engine.task_service import TaskService, source_key
@@ -60,6 +62,8 @@ def execute(req: Workspace, operation: Callable):
         raise HTTPException(409, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, "Workspace not found") from exc
+    except ProviderError as exc:
+        return JSONResponse(status_code=422, content={"status": "error", "code": exc.code, "message": str(exc)})
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

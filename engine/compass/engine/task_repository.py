@@ -34,35 +34,38 @@ class TaskRepository:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise ValueError(f"Unsupported task database version: {version}")
             if version == 0:
                 db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL)")
                 db.execute("CREATE TABLE revisions (task_id TEXT NOT NULL, revision INTEGER NOT NULL, "
                            "payload TEXT NOT NULL, PRIMARY KEY(task_id, revision))")
-            if version == 1:
-                self._backup_v1(db)
+            if version in (1, 2):
+                self._backup_version(db, version)
             if version in (0, 1):
                 db.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), "
                            "base_revision INTEGER NOT NULL, kind TEXT NOT NULL, request_id TEXT NOT NULL UNIQUE, "
                            "state TEXT NOT NULL, stage TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL, "
                            "deadline REAL NOT NULL, model TEXT NOT NULL, provider TEXT NOT NULL, "
-                           "error_code TEXT, message TEXT, result_revision INTEGER)")
+                           "error_code TEXT, message TEXT, result_revision INTEGER, completion TEXT)")
                 db.execute("CREATE UNIQUE INDEX one_active_job ON jobs((1)) WHERE state IN ('queued','running')")
-                db.execute("PRAGMA user_version=2")
+            if version == 2:
+                db.execute("ALTER TABLE jobs ADD COLUMN completion TEXT")
+            if version in (0, 1, 2):
+                db.execute("PRAGMA user_version=3")
 
-    def _backup_v1(self, db):
+    def _backup_version(self, db, version):
         directory = self.path.parent / "task-backups"
         if not directory.resolve().is_relative_to(self.path.parent.resolve()):
             raise ValueError("Task backup must remain inside the workspace")
         directory.mkdir(mode=0o700, exist_ok=True)
-        fd, name = tempfile.mkstemp(prefix="tasks-v1-", suffix=".tmp", dir=directory)
+        fd, name = tempfile.mkstemp(prefix=f"tasks-v{version}-", suffix=".tmp", dir=directory)
         temporary = Path(name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as output:
                 for statement in db.iterdump():
                     output.write(statement + "\n")
-                output.write("PRAGMA user_version=1;\n")
+                output.write(f"PRAGMA user_version={version};\n")
                 output.flush()
                 os.fsync(output.fileno())
             with sqlite3.connect(":memory:") as restored:
@@ -72,6 +75,8 @@ class TaskRepository:
                 if (restored.execute("SELECT id, revision, payload FROM tasks ORDER BY id").fetchall() != original
                         or restored.execute("SELECT task_id, revision, payload FROM revisions ORDER BY task_id, revision").fetchall() != history):
                     raise ValueError("Task migration backup failed readback")
+                if version >= 2 and restored.execute("SELECT * FROM jobs ORDER BY id").fetchall() != db.execute("SELECT * FROM jobs ORDER BY id").fetchall():
+                    raise ValueError("Generation history backup failed readback")
             temporary.rename(temporary.with_suffix(".sql"))
         finally:
             temporary.unlink(missing_ok=True)

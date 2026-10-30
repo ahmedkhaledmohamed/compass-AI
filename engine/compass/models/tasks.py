@@ -60,6 +60,8 @@ class Artifact(StrictModel):
     decision: str = ""
     model: str
     provider: str
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
     workflow_version: str = "decision-task-v1"
     created_at: str = Field(default_factory=now)
     edited_by_user: bool = False

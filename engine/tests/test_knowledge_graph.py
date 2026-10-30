@@ -14,7 +14,7 @@ class TestKnowledgeGraphPersistence:
         kg = KnowledgeGraph(persist_dir=persist_dir)
         kg.add(_make_evidence(title="File A", content="def hello(): pass"))
         assert len(kg) == 1
-        assert (persist_dir / "evidence_store.json").exists()
+        assert (persist_dir / "evidence.sqlite3").exists()
 
     def test_add_many_and_persist(self, tmp_path):
         persist_dir = tmp_path / "knowledge"
@@ -25,7 +25,7 @@ class TestKnowledgeGraphPersistence:
         ]
         kg.add_many(items)
         assert len(kg) == 2
-        assert (persist_dir / "evidence_store.json").exists()
+        assert (persist_dir / "evidence.sqlite3").exists()
 
     def test_reload_from_persistence(self, tmp_path):
         persist_dir = tmp_path / "knowledge"
@@ -42,15 +42,15 @@ class TestKnowledgeGraphPersistence:
         titles = {e.title for e in kg2.store.items}
         assert titles == {"Evidence A", "Evidence B"}
 
-    def test_clear_removes_persistence(self, tmp_path):
+    def test_clear_persists_empty_active_snapshot(self, tmp_path):
         persist_dir = tmp_path / "knowledge"
         kg = KnowledgeGraph(persist_dir=persist_dir)
         kg.add(_make_evidence())
-        assert (persist_dir / "evidence_store.json").exists()
+        assert (persist_dir / "evidence.sqlite3").exists()
 
         kg.clear()
         assert len(kg) == 0
-        assert not (persist_dir / "evidence_store.json").exists()
+        assert len(KnowledgeGraph(persist_dir=persist_dir)) == 0
 
 
 class TestKnowledgeGraphQuery:
@@ -99,3 +99,19 @@ class TestKnowledgeGraphEphemeral:
         assert len(kg) == 1
         results = kg.query("ephemeral")
         assert len(results) == 1
+
+
+def test_partial_vector_cache_is_rebuilt_from_saved_evidence(tmp_path):
+    kg = KnowledgeGraph(tmp_path)
+    kg.add_many([
+        _make_evidence(title="One", content="mobile sync reliability"),
+        _make_evidence(title="Two", content="product sync strategy"),
+    ])
+    assert len(kg.query("sync", n_results=2)) == 2
+    snapshot_id, items = kg._repository.read()
+    collection = kg._index(snapshot_id, items)
+    collection.delete(ids=[items[0].id])
+    assert collection.count() == 1
+    restarted = KnowledgeGraph(tmp_path)
+    assert {item.id for item in restarted.query("sync", n_results=2)} == {item.id for item in items}
+    assert collection.count() == 2

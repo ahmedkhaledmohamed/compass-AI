@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
 import sys
 import traceback
 from collections.abc import AsyncGenerator
@@ -15,7 +17,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,7 @@ _kg_workspace_path: str | None = None
 
 # In-memory credential store — tokens injected by Electron, never persisted to disk
 _credentials: dict[str, dict] = {}
+_engine_token = os.environ.get("COMPASS_ENGINE_TOKEN", "")
 
 
 @asynccontextmanager
@@ -50,12 +52,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Compass Engine", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def authenticate_engine_request(request: Request, call_next):
+    if not _engine_token:
+        return JSONResponse(status_code=503, content={"detail": "Engine authentication is not configured"})
+    authorization = request.headers.get("authorization", "").encode()
+    expected = f"Bearer {_engine_token}".encode()
+    if not secrets.compare_digest(authorization, expected):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Unauthorized engine request"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)
@@ -1564,6 +1573,8 @@ def _get_kg(workspace_path: str) -> KnowledgeGraph:
 def main():
     """Run the engine server."""
     import uvicorn
+    if not _engine_token:
+        raise RuntimeError("Set COMPASS_ENGINE_TOKEN before starting the local engine")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9811
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 

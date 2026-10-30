@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from compass import server
 from compass.documents import (
     InvalidDocumentPath,
     create_document,
@@ -12,7 +13,12 @@ from compass.documents import (
     save_document,
 )
 from compass.models.documents import StoredDocument
-from compass.server import app
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(server, "_engine_token", "fictional-engine-session")
+    return TestClient(server.app, headers={"Authorization": "Bearer fictional-engine-session"})
 
 
 def test_document_lifecycle(tmp_path):
@@ -72,19 +78,18 @@ def test_symlinked_storage_cannot_escape_workspace(tmp_path):
 
 
 @pytest.mark.parametrize("endpoint", ["get", "delete", "save"])
-def test_api_rejects_traversal_without_touching_sentinel(tmp_path, endpoint):
+def test_api_rejects_traversal_without_touching_sentinel(tmp_path, endpoint, client):
     sentinel = tmp_path / "sentinel.json"
     sentinel.write_text("preserved")
     body = {"workspace_path": str(tmp_path), "id": "../../sentinel"}
     if endpoint == "save":
         body["title"] = "Rejected"
-    response = TestClient(app).post(f"/documents/{endpoint}", json=body)
+    response = client.post(f"/documents/{endpoint}", json=body)
     assert response.status_code == 400
     assert sentinel.read_text() == "preserved"
 
 
-def test_api_document_roundtrip_and_missing_id(tmp_path):
-    client = TestClient(app)
+def test_api_document_roundtrip_and_missing_id(tmp_path, client):
     created = client.post("/documents/save", json={"workspace_path": str(tmp_path), "title": "Fictional"})
     assert created.status_code == 200
     doc_id = created.json()["document"]["id"]

@@ -166,6 +166,8 @@ npm run dev
 
 ### Run just the engine
 
+The desktop app configures a fresh local session token automatically. For manual development, set `COMPASS_ENGINE_TOKEN` to a private random value before starting the server and send it as `Authorization: Bearer <token>` on every request, including health checks. The renderer uses the Electron bridge; browser origins are not granted direct API access.
+
 ```bash
 cd engine && uvicorn compass.server:app --port 9811
 ```

@@ -12,7 +12,8 @@
     "build:linux": "npm run build && electron-builder --linux",
     "build:all": "npm run build && electron-builder --mac --win --linux",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test:secrets": "tsc -p tsconfig.electron.json && node --test tests/secret-storage.test.cjs"
+    "test:secrets": "tsc -p tsconfig.electron.json && node --test tests/secret-storage.test.cjs",
+    "test:engine-auth": "tsc -p tsconfig.electron.json && node --test tests/engine-auth.test.cjs"
   },
   "dependencies": {
     "@tiptap/extension-code-block-lowlight": "^3.20.1",

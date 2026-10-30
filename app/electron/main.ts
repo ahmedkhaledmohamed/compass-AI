@@ -306,16 +306,17 @@ ipcMain.handle("engine-restart", async () => {
 
 // IPC: Secure secret storage via OS keychain (Electron safeStorage)
 // Secrets are encrypted with the OS keychain and stored in a local file.
-// They never leave the machine and are not readable without OS-level auth.
+// Persistent credentials require an available OS-backed encryption service.
 const secretsPath = path.join(app.getPath("userData"), "secrets.enc");
 
+function hasSecureSecretStorage(): boolean {
+  return safeStorage.isEncryptionAvailable() &&
+    (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
+}
+
 ipcMain.handle("secrets-store", async (_event, key: string, value: string) => {
-  if (!safeStorage.isEncryptionAvailable()) {
-    // Fallback: store as-is (still better than localStorage — it's in app data, not browser storage)
-    const store = loadSecretsFile();
-    store[key] = value;
-    fs.writeFileSync(secretsPath, JSON.stringify(store), "utf-8");
-    return true;
+  if (!hasSecureSecretStorage()) {
+    throw new Error("Secure credential storage is unavailable. Unlock your OS keychain and try again.");
   }
   const store = loadSecretsFile();
   store[key] = safeStorage.encryptString(value).toString("base64");
@@ -327,9 +328,7 @@ ipcMain.handle("secrets-load", async (_event, key: string) => {
   const store = loadSecretsFile();
   const encrypted = store[key];
   if (!encrypted) return null;
-  if (!safeStorage.isEncryptionAvailable()) {
-    return encrypted; // Fallback: stored as plaintext
-  }
+  if (!hasSecureSecretStorage()) return null;
   try {
     return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
   } catch {
@@ -360,16 +359,14 @@ function loadSecretsFile(): Record<string, string> {
 const CREDENTIAL_PREFIX = "credential:";
 
 function encryptValue(value: string): string {
-  if (safeStorage.isEncryptionAvailable()) {
-    return safeStorage.encryptString(value).toString("base64");
+  if (!hasSecureSecretStorage()) {
+    throw new Error("Secure credential storage is unavailable. Unlock your OS keychain and try again.");
   }
-  return value;
+  return safeStorage.encryptString(value).toString("base64");
 }
 
 function decryptValue(encrypted: string): string | null {
-  if (!safeStorage.isEncryptionAvailable()) {
-    return encrypted;
-  }
+  if (!hasSecureSecretStorage()) return null;
   try {
     return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
   } catch {

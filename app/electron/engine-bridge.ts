@@ -162,6 +162,13 @@ function notifyRenderer(channel: string, data: unknown): void {
   }
 }
 
+export function engineEnvironment(source:NodeJS.ProcessEnv):NodeJS.ProcessEnv {
+  const environment={...source};
+  for(const name of Object.keys(environment))if(/(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i.test(name))delete environment[name];
+  environment.COMPASS_NATIVE_INFERENCE_ONLY="1";
+  return environment;
+}
+
 export async function startEngine(): Promise<number> {
   if (engineProcess && enginePort) return enginePort;
 
@@ -180,7 +187,7 @@ export async function startEngine(): Promise<number> {
     cwd: engineDir,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env,
+      ...engineEnvironment(process.env),
       COMPASS_ENGINE_PORT: String(enginePort),
       COMPASS_ENGINE_TOKEN: engineToken,
     },

@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import { AIVault, AIConnection, AIProvider, publicConnection } from "./ai-vault";
 import { authorize, CONFIG, ConnectionHTTPError, JSONFetch, OAuthProvider, requestJSON, revokeSession, tokenValues, validateIdentity } from "./ai-auth";
 
+import {bindingFor,InferenceBroker} from "./inference-broker";
+
 const uuid = () => randomUUID().replace(/-/g,"");
 const validId = (id: unknown): string => { if (typeof id !== "string" || !/^[a-f0-9]{32}$/.test(id)) throw new Error("Invalid AI connection."); return id; };
 const validProvider = (provider: unknown): AIProvider => { if (typeof provider !== "string" || !["chatgpt","openrouter","anthropic","huggingface"].includes(provider)) throw new Error("Unsupported AI provider."); return provider as AIProvider; };
@@ -10,7 +12,9 @@ export class AIConnections {
   private pending?: AbortController;
   private refreshes = new Map<string,Promise<AIConnection>>();
   private selection: Promise<unknown> = Promise.resolve();
-  constructor(private vault: AIVault, private openBrowser: (url: string) => Promise<unknown>, private engine: (endpoint: string, body?: unknown) => Promise<any>, private fetchJSON: JSONFetch = requestJSON, private hfClientId = "", private revoke: (url:string,init:RequestInit) => Promise<boolean> = revokeSession) {}
+  private broker: InferenceBroker;
+  private jobs = new Map<string,{binding:string;token:string;jobId:string}>();
+  constructor(private vault: AIVault, private openBrowser: (url: string) => Promise<unknown>, private engine: (endpoint: string, body?: unknown) => Promise<any>, private fetchJSON: JSONFetch = requestJSON, private hfClientId = "", private revoke: (url:string,init:RequestInit) => Promise<boolean> = revokeSession, inferenceFetch:typeof fetch=fetch) { this.broker=new InferenceBroker(inferenceFetch); }
   status() {
     const data = this.vault.read();
     const active = data.connections.find(item => item.id === data.active);
@@ -131,7 +135,7 @@ export class AIConnections {
   private async idle() {
     const result = await this.engine("/connections/readiness");
     if (result.status!=="ok" || typeof result.busy!=="boolean") throw new Error("The engine is not ready to change AI connections. Restart it and try again.");
-    if (result.busy) throw new Error("Finish or cancel generation before changing the active AI connection.");
+    if (result.busy || this.broker.busy()) throw new Error("Finish or cancel generation before changing the active AI connection.");
   }
   activate(id: string, model: string, serving: string) {
     return this.serial(async () => {
@@ -150,13 +154,9 @@ export class AIConnections {
       if (!current || current.revision!==record.revision) throw new Error("This connection changed. Select it again.");
       current.model=model; current.servingProvider=serving; current.revision++;
       latest.active=id; latest.managed=true; this.vault.write(latest);
-      await this.configure(current);
+
       return this.status();
     });
-  }
-  private async configure(record: AIConnection) {
-    const result = await this.engine("/configure",{provider:record.provider,model:record.model,inference_provider:record.servingProvider,api_key:record.accessToken});
-    if(result.status!=="ok") throw new Error("The AI connection could not be activated. Reconnect or choose another available model.");
   }
   private async prepareSelected() {
     const data = this.vault.read();
@@ -164,18 +164,45 @@ export class AIConnections {
     if (!data.active) { await this.engine("/connections/clear",{}); throw new Error("Choose an AI connection before generating a draft."); }
     const record = await this.credential(data.active);
     if (!record.model) throw new Error("Choose a model before generating a draft.");
-    await this.configure(record); return true;
+    return record;
   }
   prepare() { return this.serial(() => this.prepareSelected()); }
   runGeneration(endpoint: string, body: unknown) {
     return this.serial(async () => {
-      await this.prepareSelected();
-      // Hold selection ownership until the engine has captured the connection
-      // in its job record. Account switching cannot slip between these calls.
-      return this.engine(endpoint,body);
+      if(endpoint!=="/tasks/jobs/start")throw new Error("Use a durable generation job.");
+      for(const [key,entry] of this.jobs)if(!this.broker.has(entry.token))this.jobs.delete(key);
+      const binding=bindingFor(body);
+      const key=JSON.stringify([binding.workspace_path,binding.request_id]);
+      const previous=this.jobs.get(key);
+      if(previous){
+        if(previous.binding!==JSON.stringify(binding))throw new Error("Request ID was already used for a different operation.");
+        return this.observeGeneration("/tasks/jobs/status",{workspace_path:binding.workspace_path,task_id:binding.task_id,job_id:previous.jobId});
+      }
+      const record=await this.prepareSelected();
+      const grant=await this.broker.issue(body,record,async()=>{if(this.record(record.id).revision!==record.revision)throw new Error("This connection changed before inference.");return this.credential(record.id);});
+      try {
+        const result=await this.engine(endpoint,{...(body as object),native_inference:grant});
+        if(result.status!=="ok" || !["queued","running"].includes(result.job?.state))this.broker.revoke(grant.token);
+        else this.jobs.set(key,{binding:JSON.stringify(binding),token:grant.token,jobId:result.job.id});
+        if(result.status!=="ok")return {status:"error",message:typeof result.detail==="string"?result.detail:"The generation job could not be started. Reload the task and try again."};
+        return result;
+      } catch(cause){this.broker.revoke(grant.token);throw cause;}
     });
   }
+  async observeGeneration(endpoint:string,body:any){
+    const result=await this.engine(endpoint,body);
+    if(result.status==="ok"&&result.job&&!['queued','running'].includes(result.job.state)){
+      for(const [key,entry] of this.jobs){
+        const binding=JSON.parse(entry.binding);
+        if(entry.jobId===result.job.id&&binding.workspace_path===body?.workspace_path&&binding.task_id===body?.task_id){this.broker.revoke(entry.token);this.jobs.delete(key);}
+      }
+    }
+    return result;
+  }
+  resetInference() { this.broker.reset();this.jobs.clear(); }
+  async close() { await this.broker.close(); }
   async restore() {
+    this.resetInference();
     const data = this.vault.read(); if(!data.managed) { await this.engine("/connections/clear",{}); return; }
     if (!data.active) { await this.engine("/connections/clear",{}); return; }
     try { await this.prepare(); } catch { await this.engine("/connections/clear",{}); throw new Error("Reconnect the selected AI account before generating a draft."); }

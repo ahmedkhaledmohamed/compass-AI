@@ -4,7 +4,7 @@ const engineEndpoints = new Set([
   "/evidence", "/evidence/by-id", "/usage", "/sync/status",
   "/imports/start", "/imports/status", "/imports/latest", "/imports/cancel",
   "/documents/list", "/documents/get",
-  ...["create","list","get","sources","evidence","retrieve","passage","generate","revise","review","accept",
+  ...["create","list","get","sources","evidence","retrieve","passage","revise","review","accept",
     "jobs/start","jobs/status","jobs/latest","jobs/cancel"].map(route=>`/tasks/${route}`),
 ]);
 export function requireReleaseEndpoint(endpoint: unknown): asserts endpoint is string {

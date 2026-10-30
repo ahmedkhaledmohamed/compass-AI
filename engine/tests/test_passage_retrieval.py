@@ -162,6 +162,7 @@ def test_receipts_and_passage_api_are_bound_to_the_pinned_task_scope(setup, engi
 def test_v3_task_history_has_verified_backup_before_receipt_schema_upgrade(setup):
     root, _, _, service, task, _ = setup
     with sqlite3.connect(service.tasks.path) as db:
+        db.execute("ALTER TABLE jobs DROP COLUMN connection")
         db.execute("PRAGMA user_version=3")
     migrated = TaskRepository(root)
     assert migrated.read(task.id) == task
@@ -173,7 +174,7 @@ def test_v3_task_history_has_verified_backup_before_receipt_schema_upgrade(setup
         assert restored.execute("PRAGMA user_version").fetchone()[0] == 3
         assert restored.execute("SELECT payload FROM tasks WHERE id=?",(task.id,)).fetchone()
     with sqlite3.connect(migrated.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 def test_required_accepted_support_is_kept_before_ranked_distractors():

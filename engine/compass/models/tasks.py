@@ -84,6 +84,14 @@ class RetrievalReceipt(StrictModel):
     passages: list[PassageLocator]
 
 
+class ConnectionBinding(StrictModel):
+    id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    revision: int = Field(ge=1)
+    provider: str = Field(pattern=r"^(chatgpt|anthropic|openrouter|huggingface)$")
+    model: str = Field(min_length=1, max_length=256)
+    serving_provider: str = Field(max_length=128)
+
+
 class Artifact(StrictModel):
     body: DraftBody
     reviews: list[Review]
@@ -93,6 +101,7 @@ class Artifact(StrictModel):
     provider: str
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
+    connection: ConnectionBinding | None = None
     retrieval: RetrievalReceipt | None = None
     workflow_version: str = "decision-task-v1"
     created_at: str = Field(default_factory=now)

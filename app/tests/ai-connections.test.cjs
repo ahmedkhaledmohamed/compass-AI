@@ -103,7 +103,8 @@ test('saved keys are returned only as connection metadata',async t=>{
  assert.equal(JSON.stringify(list).includes('fixture-api-key'),false);
  await service.activate(list[0].id,'fixture-model','');
  assert.equal(service.status().active.id,list[0].id);
- assert.equal(calls.find(call=>call[0]==='/configure')[1].api_key,'fixture-api-key');
+ assert.equal(calls.some(call=>call[0]==='/configure'),false);
+ assert.equal(JSON.stringify(calls).includes('fixture-api-key'),false);
  assert.equal(JSON.stringify(service.status()).includes('fixture-api-key'),false);
 });
 test('concurrent refreshes rotate one token set and never return tokens to the renderer',async t=>{
@@ -174,10 +175,26 @@ test('selection is held until job submission captures the active connection',asy
  const {vault}=fixture(t);const record=seed(vault);const data=vault.read();data.active=record.id;data.managed=true;vault.write(data);
  let started,acknowledge;const entered=new Promise(resolve=>{started=resolve;});let busy=false;
  const service=new AIConnections(vault,async()=>{},async endpoint=>{
-  if(endpoint==='/tasks/jobs/start'){started();return new Promise(resolve=>{acknowledge=()=>{busy=true;resolve({status:'ok',job:{id:'fixture-job'}});};});}
+  if(endpoint==='/tasks/jobs/start'){started();return new Promise(resolve=>{acknowledge=()=>{busy=true;resolve({status:'ok',job:{id:'fixture-job',state:'queued'}});};});}
   return {status:'ok',busy};
  },async()=>({}));
- const run=service.runGeneration('/tasks/jobs/start',{});await entered;const disconnect=service.disconnect(record.id);
+ const run=service.runGeneration('/tasks/jobs/start',{workspace_path:'/fictional/workspace',task_id:'fixture-task',expected_revision:1,kind:'brief',request_id:'fixture-request'});await entered;const disconnect=service.disconnect(record.id);
  await new Promise(resolve=>setImmediate(resolve));assert.equal(vault.read().connections[0].accessToken,'fixture-access');
  acknowledge();await run;await assert.rejects(disconnect,/Finish or cancel/);assert.equal(service.status().active.id,record.id);
+});
+
+test('generation sends an ephemeral grant instead of credentials and reuses a live idempotent submission',async t=>{
+ const {vault}=fixture(t);const record=seed(vault);const data=vault.read();data.active=record.id;data.managed=true;vault.write(data);
+ const calls=[];let state='running';
+ const service=new AIConnections(vault,async()=>{},async(endpoint,body)=>{calls.push({endpoint,body});return {status:'ok',busy:false,job:{id:'native-job',state}};},async()=>({}));t.after(()=>service.close());
+ const body={workspace_path:'/fictional/workspace',task_id:'task',expected_revision:1,kind:'brief',request_id:'one-request'};
+ await service.runGeneration('/tasks/jobs/start',body);
+ const sent=calls.find(call=>call.endpoint==='/tasks/jobs/start').body;
+ assert.equal(sent.native_inference.connection.id,record.id);assert.match(sent.native_inference.token,/^[a-f0-9]{64}$/);
+ assert.equal(JSON.stringify(calls).includes('fixture-access'),false);assert.equal(JSON.stringify(calls).includes('fixture-refresh'),false);
+ await service.runGeneration('/tasks/jobs/start',body);assert.equal(calls.filter(call=>call.endpoint==='/tasks/jobs/start').length,1);
+ await assert.rejects(service.runGeneration('/tasks/jobs/start',{...body,expected_revision:2}),/already used/);
+ await assert.rejects(service.disconnect(record.id),/Finish or cancel/);
+ state='cancelled';await service.observeGeneration('/tasks/jobs/cancel',{workspace_path:body.workspace_path,task_id:body.task_id,job_id:'native-job'});
+ await service.disconnect(record.id);assert.equal(vault.read().connections[0].accessToken,'');
 });

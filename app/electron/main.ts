@@ -108,6 +108,7 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   aiConnections?.cancel();
+  void aiConnections?.close();
   stopEngine();
 });
 
@@ -137,6 +138,7 @@ handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) =>
     if(operation === "native-only" && aiConnections) return {status:"error",message:"Use AI connections to change this provider or model."};
     return await nativeWorkspaces().request(endpoint,body,(target,request)=>{
       if(operation === "generation" && aiConnections)return aiConnections.runGeneration(target,request);
+      if(["/tasks/jobs/status","/tasks/jobs/latest","/tasks/jobs/cancel"].includes(target)&&aiConnections)return aiConnections.observeGeneration(target,request);
       return engineFetch(target,request?{body:request}:undefined);
     });
   } catch (err) {
@@ -156,6 +158,7 @@ handleMainIPC("engine-health", async () => {
 // IPC: Restart engine after crash
 handleMainIPC("engine-restart", async () => {
   try {
+    aiConnections?.resetInference();
     stopEngine();
     await startEngine();
     await aiConnections?.restore();

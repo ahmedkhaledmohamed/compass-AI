@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import RLock, Timer
 from uuid import uuid4
 
+from compass.engine.native_inference import connection_binding
 from compass.engine.provider_transport import ProviderError, RequestControl
 from compass.engine.task_repository import TaskConflict, TaskNotFound, TaskRepository
 
@@ -137,11 +138,12 @@ class JobManager:
                 now = time.time()
                 try:
                     db.execute("INSERT INTO jobs(id, task_id, base_revision, kind, request_id, state, stage, "
-                               "created_at, updated_at, deadline, model, provider) "
-                               "VALUES (?, ?, ?, ?, ?, 'queued', 'queued', ?, ?, ?, ?, ?)",
+                               "created_at, updated_at, deadline, model, provider, connection) "
+                               "VALUES (?, ?, ?, ?, ?, 'queued', 'queued', ?, ?, ?, ?, ?, ?)",
                                (job_id, task_id, expected_revision, kind, request_id, now, now,
                                 now + timeout_seconds, orchestrator.default_model,
-                                type(orchestrator.provider).__name__))
+                                type(orchestrator.provider).__name__,
+                                json.dumps(connection_binding(orchestrator.provider))))
                 except sqlite3.IntegrityError as exc:
                     raise TaskConflict("A generation job is already active in this workspace") from exc
             key = (workspace, job_id)
@@ -225,6 +227,7 @@ class JobManager:
         future = self._futures.get((workspace, job_id))
         result["draining"] = bool(future and not future.done() and result["state"] in ("cancelled", "timed_out", "interrupted"))
         result["completion"] = json.loads(result["completion"]) if result["completion"] else None
+        result["connection"] = json.loads(result["connection"]) if result["connection"] else None
         result.pop("request_id", None)
         return result
 

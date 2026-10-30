@@ -1,5 +1,6 @@
 """Desktop task operations backed by the shared task application service."""
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -9,6 +10,8 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from compass.config import load_config
+from compass.engine.native_inference import NativeGrant, NativeInference
+from compass.engine.orchestrator import Orchestrator, get_orchestrator
 from compass.engine.passage_retrieval import RetrievalError
 from compass.engine.provider_transport import ProviderError
 from compass.engine.task_jobs import JobStopped, get_job_manager
@@ -182,6 +185,7 @@ def accept(req: Acceptance):
 
 class StartJob(Operation):
     request_id: str = Field(min_length=1, max_length=128)
+    native_inference: NativeGrant | None = None
 
 
 class JobRef(TaskRef):
@@ -190,9 +194,19 @@ class JobRef(TaskRef):
 
 @router.post("/jobs/start", status_code=202)
 def start_job(req: StartJob):
-    return execute(req, lambda service: {"status": "ok", "job": service.start_job(
-        req.task_id, req.expected_revision, req.kind, req.request_id,
-    )})
+    if os.environ.get("COMPASS_NATIVE_INFERENCE_ONLY") == "1" and req.native_inference is None:
+        raise HTTPException(403, "Desktop generation requires a native inference grant")
+    def start(service):
+        orchestrator = None
+        if req.native_inference:
+            binding = req.model_dump(include={"workspace_path", "task_id", "expected_revision", "kind", "request_id"})
+            orchestrator = Orchestrator(provider=NativeInference(req.native_inference, binding),
+                                        default_model=req.native_inference.connection.model)
+            orchestrator.usage = get_orchestrator().usage
+        return {"status": "ok", "job": service.start_job(
+            req.task_id, req.expected_revision, req.kind, req.request_id, orchestrator=orchestrator,
+        )}
+    return execute(req, start)
 
 
 @router.post("/jobs/status")

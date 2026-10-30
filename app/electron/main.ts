@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, safeStorage, shell } from "electron";
 import { pathToFileURL } from "url";
 import path from "path";
 import fs from "fs";
@@ -23,6 +23,12 @@ import { startEngine, stopEngine, engineFetch, engineRequest } from "./engine-br
 import { registerOAuthIPC, handleOAuthCallback } from "./oauth";
 import { getProvider, getAllProviders } from "./oauth-providers";
 import { handleMainIPC, trustMainWindow } from "./ipc";
+import { AIVault } from "./ai-vault";
+import { AIConnections, engineOperation } from "./ai-connections";
+
+let aiConnections: AIConnections | undefined;
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -72,12 +78,19 @@ if (process.defaultApp) {
 }
 
 app.whenReady().then(async () => {
+  if (!ownsInstance) return;
+  aiConnections = new AIConnections(new AIVault(path.join(app.getPath("userData"),"ai-connections.enc"), {
+    available:hasSecureSecretStorage,
+    encrypt:value => safeStorage.encryptString(value),
+    decrypt:value => safeStorage.decryptString(value),
+  }), url => shell.openExternal(url), (endpoint,body) => engineFetch(endpoint,body ? {body} : undefined), undefined, process.env.COMPASS_HF_CLIENT_ID || "");
   createWindow();
   registerOAuthIPC();
   registerProviderIPC();
 
   try {
     await startEngine();
+    await aiConnections?.restore();
   } catch (err) {
     console.error("[main] Failed to start engine:", err);
   }
@@ -115,6 +128,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  aiConnections?.cancel();
   stopEngine();
 });
 
@@ -237,6 +251,9 @@ handleMainIPC(
 // IPC: Engine API call (proxied through main process via engine-bridge)
 handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) => {
   try {
+    const operation=engineOperation(endpoint);
+    if(operation === "native-only" && aiConnections) return {status:"error",message:"Use AI connections to change this provider or model."};
+    if(operation === "generation" && aiConnections) return await aiConnections.runGeneration(endpoint,body);
     return await engineFetch(endpoint, body ? { body } : undefined);
   } catch (err) {
     return { status: "error", message: String(err) };
@@ -297,6 +314,7 @@ handleMainIPC("engine-restart", async () => {
   try {
     stopEngine();
     await startEngine();
+    await aiConnections?.restore();
     return { status: "ok" };
   } catch (err) {
     return { status: "error", message: String(err) };
@@ -324,6 +342,7 @@ handleMainIPC("secrets-store", async (_event, key: string, value: string) => {
 });
 
 handleMainIPC("secrets-load", async (_event, key: string) => {
+  if(aiConnections && key === "anthropic-api-key") return null;
   const store = loadSecretsFile();
   const encrypted = store[key];
   if (!encrypted) return null;
@@ -454,3 +473,27 @@ function registerProviderIPC(): void {
     return getAllProviders();
   });
 }
+
+
+function nativeAI(): AIConnections {
+  if(!aiConnections) throw new Error("AI connections are still starting.");
+  return aiConnections;
+}
+handleMainIPC("ai-status", () => nativeAI().status());
+handleMainIPC("ai-list", () => nativeAI().list());
+handleMainIPC("ai-sign-in", (_event, provider: unknown, id?: string) => nativeAI().signIn(provider,id));
+handleMainIPC("ai-cancel", () => nativeAI().cancel());
+handleMainIPC("ai-save-key", (_event, provider: unknown, key: unknown) => nativeAI().saveKey(provider,key));
+handleMainIPC("ai-models", (_event, id: string) => nativeAI().models(id));
+handleMainIPC("ai-routes", (_event, id: string, model: string) => nativeAI().routes(id,model));
+handleMainIPC("ai-activate", (_event, id: string, model: string, serving: string) => nativeAI().activate(id,model,serving));
+handleMainIPC("ai-disconnect", (_event, id: string) => nativeAI().disconnect(id));
+
+handleMainIPC("ai-forget", (_event, id: string) => nativeAI().forget(id));
+
+handleMainIPC("ai-import-saved-claude", async () => {
+  const encrypted=loadSecretsFile()["anthropic-api-key"];
+  const key=encrypted ? decryptValue(encrypted) : null;
+  if(!key) throw new Error("No saved Claude key is available. Connect with your current API key.");
+  return nativeAI().saveKey("anthropic",key);
+});

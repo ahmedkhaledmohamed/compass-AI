@@ -33,6 +33,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
   const { taskId } = useParams();
   const navigate = useNavigate();
   const epoch = useRef(0);
+  const [activeAI, setActiveAI] = useState<NativeAIConnection | null>(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [sources, setSources] = useState<Array<{ name: string; items: number }>>([]);
   const [task, setTask] = useState<DecisionTask | null>(null);
@@ -53,12 +54,13 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
     setTask(null); setJob(null); setEvidence([]); setError(""); setBusy("Loading work…");
     async function load() {
       try {
-        const [list, available] = await Promise.all([
+        const [list, available, aiStatus] = await Promise.all([
           call<{ tasks: TaskSummary[] }>(workspace, "list"),
           call<{ sources: Array<{ name: string; items: number }> }>(workspace, "sources"),
+          window.compass.ai.status(),
         ]);
         if (epoch.current !== token) return;
-        setTasks(list.tasks); setSources(available.sources);
+        setTasks(list.tasks); setSources(available.sources); setActiveAI(aiStatus.active);
         if (taskId) {
           let [result, saved, pending] = await Promise.all([
             call<{ task: DecisionTask; stale: boolean }>(workspace, "get", { task_id: taskId }),
@@ -163,7 +165,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
 
   return <div className="min-h-full text-compass-text">
     <header className="flex justify-between items-center px-8 py-6 border-b border-compass-border">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Work</h1><p className="mt-1 text-sm text-neutral-400">Evidence, a reviewed decision, then a handoff.</p></div>
+      <div><h1 className="text-2xl font-semibold tracking-tight">Work</h1><p className="mt-1 text-sm text-neutral-400">Evidence, a reviewed decision, then a handoff.</p><p className="mt-1 text-xs text-neutral-400">{activeAI ? `${activeAI.label} · ${activeAI.model} · ${activeAI.billing}` : <Link to="/settings" className="underline">Choose an AI connection in Settings before generating</Link>}</p></div>
       <button className={button} disabled={!!busy || working} onClick={() => navigate("/work")}>New task</button>
     </header>
     <div className="flex min-h-[calc(100vh-100px)]">
@@ -198,17 +200,17 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
           <div><h2 className="text-2xl leading-snug font-medium max-w-[36ch]">{task.question}</h2><p className="mt-3 text-neutral-400 text-sm">For {task.reader}</p><p className="mt-1 text-sm">Useful result: {task.completion_condition}</p></div>
           {stale && <div role="status" className="border-l-4 border-amber-400 pl-4 text-amber-200">Selected sources have changed. This task keeps its original evidence and edits. Start a new task to investigate the updated sources.</div>}
           <details className="border-y border-compass-border py-4"><summary className="cursor-pointer font-medium">Selected evidence ({evidence.length} {evidence.length === 1 ? "item" : "items"})</summary><div className="mt-4 space-y-3">{evidence.map((item) => <details key={item.id}><summary className="cursor-pointer text-sm">{item.title} <span className="text-neutral-400">({item.source_type})</span></summary><pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-sans text-sm text-neutral-300">{item.content}</pre></details>)}</div></details>
-          {!task.brief && <button className={primary} disabled={!!busy || working || stale} onClick={() => void operate("generate", "brief")}>Generate decision brief</button>}
-          {(["brief", "handoff"] as const).map((kind) => task[kind] && <ArtifactReview key={`${task.id}-${task.revision}-${kind}`} kind={kind} artifact={task[kind]!} evidence={evidence} disabled={!!busy || working} stale={stale} onAction={(endpoint, extra) => void operate(endpoint, kind, extra)} />)}
-          {task.brief?.state === "accepted" && !task.handoff && <button className={primary} disabled={!!busy || working || stale} onClick={() => void operate("generate", "handoff")}>Draft specification handoff</button>}
+          {!task.brief && <button className={primary} disabled={!!busy || working || stale || !activeAI} onClick={() => void operate("generate", "brief")}>Generate decision brief</button>}
+          {(["brief", "handoff"] as const).map((kind) => task[kind] && <ArtifactReview key={`${task.id}-${task.revision}-${kind}`} kind={kind} artifact={task[kind]!} evidence={evidence} canGenerate={!!activeAI} disabled={!!busy || working} stale={stale} onAction={(endpoint, extra) => void operate(endpoint, kind, extra)} />)}
+          {task.brief?.state === "accepted" && !task.handoff && <button className={primary} disabled={!!busy || working || stale || !activeAI} onClick={() => void operate("generate", "handoff")}>Draft specification handoff</button>}
         </div>}
       </div>
     </div>
   </div>;
 }
 
-function ArtifactReview({ kind, artifact, evidence, disabled, stale, onAction }: {
-  kind: ArtifactKind; artifact: Artifact; evidence: Evidence[]; disabled: boolean; stale: boolean;
+function ArtifactReview({ kind, artifact, evidence, disabled, stale, canGenerate, onAction }: {
+  kind: ArtifactKind; artifact: Artifact; evidence: Evidence[]; disabled: boolean; stale: boolean; canGenerate: boolean;
   onAction: (endpoint: string, extra?: object) => void;
 }) {
   const [body, setBody] = useState<DraftBody>(() => structuredClone(artifact.body));
@@ -216,7 +218,7 @@ function ArtifactReview({ kind, artifact, evidence, disabled, stale, onAction }:
   const dirty = JSON.stringify(body) !== JSON.stringify(artifact.body);
   const reviewed = artifact.reviews.every((review) => review !== "unreviewed") && artifact.reviews.includes("accepted");
   return <section aria-label={kind === "brief" ? "Decision brief" : "Specification handoff"} className="space-y-5">
-    <div className="flex justify-between items-start gap-4"><div><h3 className="text-lg font-semibold">{kind === "brief" ? "Decision brief" : "Specification handoff"}</h3><p className="text-sm text-neutral-400 mt-1">{artifact.state === "accepted" ? "Accepted by you" : "Draft for your review"}. Model: {artifact.model}. {artifact.input_tokens != null && artifact.output_tokens != null ? `${artifact.input_tokens} input / ${artifact.output_tokens} output tokens.` : "Token usage unavailable."}</p></div><button className={button} disabled={disabled || stale || dirty} onClick={() => onAction("generate")}>Generate a new draft</button></div>
+    <div className="flex justify-between items-start gap-4"><div><h3 className="text-lg font-semibold">{kind === "brief" ? "Decision brief" : "Specification handoff"}</h3><p className="text-sm text-neutral-400 mt-1">{artifact.state === "accepted" ? "Accepted by you" : "Draft for your review"}. Model: {artifact.model}. {artifact.input_tokens != null && artifact.output_tokens != null ? `${artifact.input_tokens} input / ${artifact.output_tokens} output tokens.` : "Token usage unavailable."}</p></div><button className={button} disabled={disabled || stale || dirty || !canGenerate} onClick={() => onAction("generate")}>Generate a new draft</button></div>
     <label className="block space-y-2"><span className="text-sm">Title</span><input className={input} value={body.title} disabled={disabled} onChange={(event) => setBody({ ...body, title: event.target.value })} /></label>
     <label className="block space-y-2"><span className="text-sm">Summary to review</span><textarea className={input} rows={3} disabled={disabled} value={body.summary} onChange={(event) => setBody({ ...body, summary: event.target.value })} /></label>
     <div><h4 className="font-medium mb-3">Review each claim</h4><p className="text-sm text-neutral-400 mb-4">Check that each cited passage supports the claim. Exact quotes have been checked; their meaning still needs your review.</p>

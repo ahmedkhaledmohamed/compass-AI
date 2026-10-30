@@ -86,8 +86,27 @@ interface CompassProviders {
   list: () => Promise<OAuthProviderConfig[]>;
 }
 
+interface NativeAIConnection {
+  id: string; provider: "chatgpt" | "openrouter" | "anthropic" | "huggingface";
+  label: string; status: string; inferenceEnabled: boolean; model: string; servingProvider: string; billing: string;
+}
+interface NativeAI {
+  status(): Promise<{managed:boolean;active:NativeAIConnection|null}>;
+  list(): Promise<NativeAIConnection[]>;
+  signIn(provider:string,id?:string): Promise<NativeAIConnection[]>;
+  cancel(): Promise<boolean>;
+  importSavedClaude(): Promise<NativeAIConnection[]>;
+  saveKey(provider:string,key:string): Promise<NativeAIConnection[]>;
+  models(id:string): Promise<Array<{id:string;label:string}>>;
+  routes(id:string,model:string): Promise<Array<{id:string;label:string}>>;
+  activate(id:string,model:string,serving:string): Promise<{managed:boolean;active:NativeAIConnection|null}>;
+  forget(id:string): Promise<NativeAIConnection[]>;
+  disconnect(id:string): Promise<{connections:NativeAIConnection[];remoteRevoked:boolean}>;
+}
+
 interface Window {
   compass: {
+    ai: NativeAI;
     engine: CompassEngine;
     app: CompassApp;
     secrets: CompassSecrets;

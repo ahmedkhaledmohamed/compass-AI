@@ -15,6 +15,7 @@ function fixture(t, { platform = "darwin", available = true, backend = "gnome_li
   const electron = {
     app: {
       getPath: () => directory,
+      requestSingleInstanceLock: () => true,
       whenReady: () => ({ then() {} }),
       setAsDefaultProtocolClient() {},
       on() {},

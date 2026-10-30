@@ -31,12 +31,17 @@ from compass.config import (
 from compass.connectors import get_connector
 from compass.engine.discoverer import Discoverer
 from compass.engine.knowledge_graph import KnowledgeGraph
-from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
+from compass.engine.orchestrator import (
+    configure_orchestrator,
+    disconnect_orchestrator,
+    get_orchestrator,
+    has_configured_provider,
+)
 from compass.engine.provider_transport import ProviderError
 from compass.engine.reconciler import Reconciler
 from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
-from compass.engine.task_jobs import close_job_manager
+from compass.engine.task_jobs import close_job_manager, get_job_manager
 from compass.task_api import router as task_router
 
 logger = logging.getLogger(__name__)
@@ -1568,11 +1573,25 @@ def _get_kg(workspace_path: str) -> KnowledgeGraph:
     return _kg
 
 
+@app.get("/connections/readiness")
+def connection_readiness():
+    return {"status": "ok", "busy": get_job_manager().busy(), "configured": has_configured_provider()}
+
+
+@app.post("/connections/clear")
+def clear_ai_connection():
+    if get_job_manager().busy():
+        raise HTTPException(409, "Finish or cancel generation before changing the AI connection")
+    disconnect_orchestrator()
+    return {"status": "ok"}
+
+
 def main():
     """Run the engine server."""
     import uvicorn
     if not _engine_token:
         raise RuntimeError("Set COMPASS_ENGINE_TOKEN before starting the local engine")
+    disconnect_orchestrator()  # Desktop server starts without an implicit environment-funded account.
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9811
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 

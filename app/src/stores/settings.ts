@@ -46,6 +46,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
+      if (window.compass?.ai) return;
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (raw) {
         const data = JSON.parse(raw);
@@ -84,6 +85,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   pushToEngine: async () => {
     const { provider, apiKey, model } = get();
     try {
+      if (window.compass?.ai) return;
       await window.compass?.engine.call("/configure", {
         api_key: provider === "byok" ? apiKey : "",
         model,

@@ -1,20 +1,14 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, Key, Cpu, BarChart3, RotateCcw, Shield, LinkIcon } from "lucide-react";
-import { clsx } from "clsx";
+import { Settings, BarChart3, RotateCcw, LinkIcon } from "lucide-react";
 import { useSettingsStore } from "../stores/settings";
 import { resetOnboarding } from "./OnboardingPage";
+import AIConnections from "../components/settings/AIConnections";
 import ConnectedAccounts from "../components/settings/ConnectedAccounts";
-
-const MODELS = [
-  { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-];
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { apiKey, model, tokenUsage, setApiKey, setModel, fetchUsage, loadSettings } =
+  const { tokenUsage, fetchUsage, loadSettings } =
     useSettingsStore();
 
   useEffect(() => {
@@ -44,22 +38,7 @@ export default function SettingsPage() {
         </button>
       </Section>
 
-      {/* API Key */}
-      <Section icon={Key} title="Anthropic API Key">
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-ant-..."
-          className="w-full px-3 py-2 rounded-lg bg-compass-card border border-compass-border text-sm text-compass-text placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-compass-accent font-mono"
-        />
-        <div className="flex items-start gap-2 mt-2">
-          <Shield className="w-3.5 h-3.5 text-green-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-neutral-400">
-            Encrypted with your OS keychain. Sent directly to Anthropic — never to Compass servers.
-          </p>
-        </div>
-      </Section>
+      <AIConnections />
 
       {/* Connected Accounts */}
       <Section icon={LinkIcon} title="Connected Accounts">
@@ -79,32 +58,7 @@ export default function SettingsPage() {
         </button>
       </Section>
 
-      {/* Model selector */}
-      <Section icon={Cpu} title="Model">
-        <div className="space-y-2">
-          {MODELS.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setModel(m.id)}
-              className={clsx(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left text-sm transition-colors",
-                model === m.id
-                  ? "border-compass-accent/50 bg-compass-accent/5 text-compass-text"
-                  : "border-compass-border bg-compass-card text-compass-muted hover:text-compass-text hover:border-compass-accent/20"
-              )}
-            >
-              <div
-                className={clsx(
-                  "w-3 h-3 rounded-full border-2",
-                  model === m.id ? "border-compass-accent bg-compass-accent" : "border-compass-border"
-                )}
-              />
-              {m.label}
-              <span className="text-xs text-compass-muted ml-auto font-mono">{m.id}</span>
-            </button>
-          ))}
-        </div>
-      </Section>
+
     </div>
   );
 }

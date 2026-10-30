@@ -260,6 +260,10 @@ class JobManager:
                 os.close(fd)
                 del self._locks[workspace]
 
+    def busy(self):
+        with self._mutex:
+            return any(not future.done() for future in self._futures.values())
+
     def close(self):
         with self._mutex:
             self._closed = True

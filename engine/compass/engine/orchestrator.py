@@ -163,6 +163,24 @@ class AnthropicProvider(LLMProvider):
             return (msg.usage.input_tokens, msg.usage.output_tokens)
 
 
+class DisconnectedProvider(LLMProvider):
+    """Explicit sign-out never restores an environment-funded account."""
+
+    def complete(self, prompt, system="", model="", max_tokens=4096):
+        raise ProviderError("authentication")
+
+
+def has_configured_provider():
+    return _instance is not None and not isinstance(_instance.provider, DisconnectedProvider)
+
+
+def disconnect_orchestrator():
+    global _instance
+    usage = _instance.usage if _instance else TokenUsage()
+    _instance = Orchestrator(provider=DisconnectedProvider())
+    _instance.usage = usage
+
+
 class ConnectedHTTPProvider(LLMProvider):
     """User-selected OpenRouter, Hugging Face or ChatGPT inference route."""
 

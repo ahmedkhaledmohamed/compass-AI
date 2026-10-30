@@ -1,6 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("compass", {
+  ai: {
+    status: () => ipcRenderer.invoke("ai-status"),
+    list: () => ipcRenderer.invoke("ai-list"),
+    signIn: (provider: string, id?: string) => ipcRenderer.invoke("ai-sign-in",provider,id),
+    cancel: () => ipcRenderer.invoke("ai-cancel"),
+    importSavedClaude: () => ipcRenderer.invoke("ai-import-saved-claude"),
+    saveKey: (provider: string, key: string) => ipcRenderer.invoke("ai-save-key",provider,key),
+    models: (id: string) => ipcRenderer.invoke("ai-models",id),
+    routes: (id: string, model: string) => ipcRenderer.invoke("ai-routes",id,model),
+    activate: (id: string, model: string, serving: string) => ipcRenderer.invoke("ai-activate",id,model,serving),
+    disconnect: (id: string) => ipcRenderer.invoke("ai-disconnect",id),
+    forget: (id: string) => ipcRenderer.invoke("ai-forget",id),
+  },
   engine: {
     call: (endpoint: string, body?: unknown) =>
       ipcRenderer.invoke("engine-call", endpoint, body),

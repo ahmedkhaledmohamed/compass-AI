@@ -13,10 +13,10 @@ from rich.console import Console
 from rich.panel import Panel
 
 from compass.config import get_compass_dir, get_output_dir, load_config
-from compass.connectors import get_connector
 from compass.engine.discoverer import Discoverer
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.reconciler import Reconciler
+from compass.engine.source_import import import_source
 from compass.engine.specifier import Specifier
 from compass.models.conflicts import ConflictReport
 from compass.models.specs import FeatureSpec, Opportunity
@@ -38,6 +38,7 @@ class DiscoveryWorkflow:
     def run(self, auto_specify: bool = True) -> dict:
         """Run the full discovery loop. Returns results dict."""
         results = {
+            "status": "ok",
             "evidence_count": 0,
             "conflicts": ConflictReport(),
             "opportunities": [],
@@ -48,7 +49,13 @@ class DiscoveryWorkflow:
         self.console.print(Panel("[bold]Step 1/4: Ingesting evidence[/bold]", style="blue"))
         results["evidence_count"] = self._ingest()
 
+        if self._import_failed:
+            results["status"] = "error"
+            self.console.print("[red]Import failed. Previous evidence was retained; generation stopped.[/red]")
+            return results
+
         if results["evidence_count"] == 0:
+            results["status"] = "error"
             self.console.print("[red]No evidence ingested. Check your source connections.[/red]")
             return results
 
@@ -73,17 +80,15 @@ class DiscoveryWorkflow:
         return results
 
     def _ingest(self) -> int:
-        self.kg.clear()
+        self._import_failed = False
         total = 0
         for source in self.config.sources:
             try:
-                connector_cls = get_connector(source.type)
-                connector = connector_cls(source)
-                evidence = connector.ingest()
-                self.kg.add_many(evidence)
+                evidence = import_source(self.kg, source)
                 total += len(evidence)
                 self.console.print(f"  {source.name}: {len(evidence)} items")
             except Exception as e:
+                self._import_failed = True
                 logger.debug("Source ingestion failed; retaining other source results.", exc_info=True)
                 self.console.print(f"  [red]{source.name}: Error — {e}[/red]")
         return total

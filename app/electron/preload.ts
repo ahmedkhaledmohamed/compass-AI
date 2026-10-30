@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("compass", {
+  workspaces: {
+    list:()=>ipcRenderer.invoke("workspaces-list"),
+    choose:(purpose:string,kind:string)=>ipcRenderer.invoke("workspaces-choose",purpose,kind),
+    create:(selection:string,name:string,description:string)=>ipcRenderer.invoke("workspaces-create",selection,name,description),
+    open:()=>ipcRenderer.invoke("workspaces-open"),
+    activate:(id:string)=>ipcRenderer.invoke("workspaces-activate",id),
+    forget:(id:string)=>ipcRenderer.invoke("workspaces-forget",id),
+  },
   ai: {
     status: () => ipcRenderer.invoke("ai-status"),
     list: () => ipcRenderer.invoke("ai-list"),
@@ -26,9 +34,6 @@ contextBridge.exposeInMainWorld("compass", {
     },
   },
   app: {
-    selectDirectory: () => ipcRenderer.invoke("select-directory"),
-    selectFile: (filters?: { name: string; extensions: string[] }[]) =>
-      ipcRenderer.invoke("select-file", filters),
     saveFile: (defaultName: string, content: string) =>
       ipcRenderer.invoke("save-file", defaultName, content),
 

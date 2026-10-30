@@ -104,9 +104,22 @@ interface NativeAI {
   disconnect(id:string): Promise<{connections:NativeAIConnection[];remoteRevoked:boolean}>;
 }
 
+interface NativeWorkspace {
+  id:string; path:string; name:string; description:string; created_at:string; last_opened:string;
+}
+interface NativeWorkspaces {
+  list():Promise<{workspaces:NativeWorkspace[];activeWorkspaceId:string|null}>;
+  choose(purpose:"workspace"|"source",kind:"directory"|"file"):Promise<{id:string;label:string}|null>;
+  create(selection:string,name:string,description:string):Promise<NativeWorkspace>;
+  open():Promise<NativeWorkspace|null>;
+  activate(id:string):Promise<NativeWorkspace>;
+  forget(id:string):Promise<{workspaces:NativeWorkspace[];activeWorkspaceId:string|null}>;
+}
+
 interface Window {
   compass: {
     ai: NativeAI;
+    workspaces:NativeWorkspaces;
     engine: CompassEngine;
     app: CompassApp;
     secrets: CompassSecrets;

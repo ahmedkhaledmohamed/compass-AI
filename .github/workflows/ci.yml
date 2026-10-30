@@ -52,6 +52,7 @@ jobs:
       - run: npm run test:engine-auth
       - run: npm run test:ipc
       - run: npm run test:connections
+      - run: npm run test:workspaces
 
   app-build:
     name: App Build (vite)

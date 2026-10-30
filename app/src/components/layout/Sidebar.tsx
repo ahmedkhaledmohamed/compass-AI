@@ -37,7 +37,7 @@ export default function Sidebar() {
   const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
   const tokenUsage = useSettingsStore((s) => s.tokenUsage);
   const fetchUsage = useSettingsStore((s) => s.fetchUsage);
-  const { workspaces, loadWorkspaces, loaded, openWorkspace } = useWorkspaceManager();
+  const { workspaces, loadWorkspaces, loaded, openWorkspace, error } = useWorkspaceManager();
   const navigate = useNavigate();
   const [syncingCount, setSyncingCount] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
@@ -128,10 +128,9 @@ export default function Sidebar() {
                 {workspaces.map((ws) => (
                   <button
                     key={ws.id}
-                    onClick={() => {
+                    onClick={async () => {
                       if (ws.path !== workspacePath) {
-                        openWorkspace(ws.id);
-                        switchWorkspace(ws.path, ws.name, ws.description);
+                        try {await openWorkspace(ws.id);await switchWorkspace(ws.path, ws.name, ws.description);} catch {return;}
                       }
                       setShowPicker(false);
                     }}
@@ -163,6 +162,7 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error}</p>}
       {/* Navigation */}
       <nav className="flex-1 flex flex-col gap-0.5 px-2 pt-1 overflow-y-auto">
         {navItems.map(({ to, icon: Icon, label }) => (

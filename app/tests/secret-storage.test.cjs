@@ -117,6 +117,6 @@ test("main process rejects deferred engine calls before invoking its transport",
     assert.equal((await f.call("engine-call",endpoint,{})).status,"error");
   }
   assert.deepEqual(f.engineCalls,[]);
-  assert.equal((await f.call("engine-call","/tasks/list",{})).status,"ok");
-  assert.deepEqual(f.engineCalls,["/tasks/list"]);
+  assert.equal((await f.call("engine-call","/tasks/list",{})).status,"error");
+  assert.deepEqual(f.engineCalls,[]);
 });

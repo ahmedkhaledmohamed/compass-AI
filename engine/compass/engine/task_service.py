@@ -27,7 +27,7 @@ Return only the requested JSON schema. Do not emit review states or decisions.
 
 
 def source_key(item: Evidence) -> str:
-    return item.source_name or f"legacy:{item.connector}"
+    return item.source_id or item.source_name or f"legacy:{item.connector}"
 
 
 class ContextBudgetExceeded(ValueError):
@@ -46,23 +46,29 @@ class TaskService:
 
     def selected_evidence(self, task: Task) -> list[Evidence]:
         _, items = self.evidence.read(task.evidence_snapshot)
-        return [item for item in items if source_key(item) in task.source_names]
+        return [item for item in items if (source_key(item) in task.source_names or item.source_name in task.source_names)]
 
     def create(self, question: str, reader: str, completion_condition: str, source_names: list[str]) -> Task:
         snapshot, items = self.evidence.read()
         available = {source_key(item) for item in items}
         if not source_names or len(set(source_names)) != len(source_names):
             raise ValueError("Select one or more distinct evidence sources")
-        if set(source_names) - available:
-            raise ValueError("A selected source has no saved evidence")
+        normalized = []
+        for selected in source_names:
+            matches = {source_key(item) for item in items if source_key(item) == selected or item.source_name == selected}
+            if len(matches) != 1:
+                raise ValueError("A selected source has no unambiguous saved evidence")
+            normalized.append(matches.pop())
+        if len(set(normalized)) != len(normalized) or set(normalized) - available:
+            raise ValueError("Select distinct evidence sources by identity")
         return self.tasks.create(Task(
             question=question, reader=reader, completion_condition=completion_condition,
-            source_names=source_names, evidence_snapshot=snapshot,
+            source_names=normalized, evidence_snapshot=snapshot,
         ))
 
     def stale(self, task: Task) -> bool:
         selected = self.selected_evidence(task)
-        current = [item for item in self.evidence.read()[1] if source_key(item) in task.source_names]
+        current = [item for item in self.evidence.read()[1] if (source_key(item) in task.source_names or item.source_name in task.source_names)]
 
         def identity(items):
             # Ignore retrieval timestamps; compare only selected content and provenance.

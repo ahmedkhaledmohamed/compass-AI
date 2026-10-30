@@ -16,6 +16,7 @@ export default function IngestButton() {
     triggerIngestion(workspacePath);
   }
 
+  const importedCount=ingestionResults.reduce((sum,result)=>sum+(result.error?0:result.items),0);
   const hasResults = ingestionResults.length > 0;
 
   return (
@@ -50,7 +51,7 @@ export default function IngestButton() {
       {hasResults && (
         <div className="rounded-lg bg-compass-card border border-compass-border p-4">
           <p className="text-sm font-medium text-compass-text mb-2">
-            {evidenceCount} evidence items from {ingestionResults.length} sources
+            {importedCount} imported in this run. {evidenceCount} retained evidence items.
           </p>
           <div className="space-y-1">
             {ingestionResults.map((r) => (

@@ -96,8 +96,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
         workspace_path: path,
       })) as {
         status: string;
-        sources: Array<{ type: string; name: string; path?: string }>;
+        sources: Array<{ id?:string; selection_kind?:"directory"|"file"; approved?:boolean; type: string; name: string; path?: string }>;
         evidence_count: number;
+        evidence_summary?:Record<string,number>;
       };
       if (info.status === "ok") {
         set({
@@ -110,7 +111,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           })),
         });
         if (info.evidence_count > 0) {
-          set({ evidenceCount: info.evidence_count });
+          set({ evidenceCount: info.evidence_count,evidenceSummary:info.evidence_summary||{} });
         }
       }
     } catch (err) {
@@ -130,8 +131,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
         sources: { name: string; type: string; items: number; error?: string }[];
         summary: Record<string, number>;
       };
-      if (res.status === "ok") {
+      if (Array.isArray(res.sources) && Number.isSafeInteger(res.total) && res.summary) {
         set({
+          ingestionError:res.status==="ok"?"":res.message||"Some sources could not be imported. Previous evidence was kept for those sources.",
           ingestionResults: res.sources,
           evidenceCount: res.total,
           evidenceSummary: res.summary,

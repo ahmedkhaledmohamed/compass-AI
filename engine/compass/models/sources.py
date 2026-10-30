@@ -67,6 +67,9 @@ class Evidence(BaseModel):
     metadata: dict = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.now)
     ingested_at: datetime = Field(default_factory=datetime.now)
+    source_id: str = ""
+    document_id: str = ""
+    content_hash: str = ""
     source_name: str = ""  # which SourceConfig.name produced this
 
     @property

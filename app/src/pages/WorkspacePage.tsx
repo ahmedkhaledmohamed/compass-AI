@@ -43,14 +43,16 @@ export default function WorkspacePage() {
           status: string;
           name: string;
           description: string;
-          sources: Array<{ type: string; name: string; path?: string }>;
+          sources: Array<{ id?:string; selection_kind?:"directory"|"file"; approved?:boolean; type: string; name: string; path?: string }>;
           evidence_count: number;
+          evidence_summary?:Record<string,number>;
         };
         if (info.status === "ok") {
           // Populate sources in the store
           const store = useWorkspaceStore.getState();
           store.setSources(
             info.sources.map((s) => ({
+              id:s.id,selection_kind:s.selection_kind,approved:s.approved,
               type: s.type,
               name: s.name,
               path: s.path ?? null,
@@ -60,7 +62,7 @@ export default function WorkspacePage() {
           );
           // If evidence exists, update the count
           if (info.evidence_count > 0) {
-            store.setIngestionResults([], info.evidence_count, {});
+            store.setIngestionResults([], info.evidence_count, info.evidence_summary||{});
           }
         }
       } catch (err) {

@@ -102,9 +102,9 @@ def sources(req: Workspace):
         groups = {}
         for item in service.evidence.read()[1]:
             key = source_key(item)
-            groups[key] = groups.get(key, 0) + 1
-        return {"status": "ok", "sources": [{"name": name, "items": count}
-                                               for name, count in sorted(groups.items())]}
+            group = groups.setdefault(key, {"id": key, "name": item.source_name or key, "items": 0})
+            group["items"] += 1
+        return {"status": "ok", "sources": sorted(groups.values(), key=lambda item: (item["name"], item["id"]))}
     return execute(req, result)
 
 

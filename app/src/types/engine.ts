@@ -21,6 +21,9 @@ export interface Evidence {
   metadata: Record<string, unknown>;
   timestamp: string;
   source_name?: string;
+  source_id?:string;
+  document_id?:string;
+  content_hash?:string;
   ingested_at?: string;
 }
 
@@ -90,6 +93,9 @@ export interface AuthConfig {
 }
 
 export interface SourceConfig {
+  id?:string;
+  selection_kind?:"directory"|"file";
+  approved?:boolean;
   type: string;
   name: string;
   path: string | null;

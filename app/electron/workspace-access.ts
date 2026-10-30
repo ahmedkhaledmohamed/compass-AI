@@ -4,7 +4,7 @@ import path from "path";
 import {randomUUID} from "crypto";
 
 type Identity = {path:string;device:number;inode:number;directory:boolean};
-type SourceApproval = Identity & {name:string;type:string};
+type SourceApproval = Identity & {id?:string;name:string;type:string};
 type Workspace = Identity & {id:string;name:string;description:string;created_at:string;last_opened:string;sources:SourceApproval[]};
 type Registry = {version:1;active:string|null;workspaces:Workspace[]};
 type Engine = (endpoint:string,body?:unknown)=>Promise<any>;
@@ -55,7 +55,7 @@ export class WorkspaceAccess {
       for(const record of data.workspaces) {
         if(!/^ws_[a-f0-9]{32}$/.test(record.id) || ids.has(record.id) || !path.isAbsolute(record.path) || !Number.isSafeInteger(record.device) || !Number.isSafeInteger(record.inode) || record.directory!==true || !Array.isArray(record.sources) || record.sources.length>100)throw new Error();
         safeText(record.name,200);safeText(record.description,4000);ids.add(record.id);
-        for(const source of record.sources)if(!path.isAbsolute(source.path) || !supportedSources.has(source.type) || typeof source.name!=="string" || !Number.isSafeInteger(source.device) || !Number.isSafeInteger(source.inode))throw new Error();
+        for(const source of record.sources)if(source.id && !/^src_[a-f0-9]{32}$/.test(source.id) || !path.isAbsolute(source.path) || !supportedSources.has(source.type) || typeof source.name!=="string" || !Number.isSafeInteger(source.device) || !Number.isSafeInteger(source.inode))throw new Error();
       }
       if(data.active!==null && !ids.has(data.active))throw new Error();
       return data;
@@ -142,24 +142,29 @@ export class WorkspaceAccess {
       const type=safeText(input.source_type,40),name=safeText(input.name,200);
       if(!supportedSources.has(type) || !name || input.url || input.options || input.auth)throw new Error("Choose a supported local source with the native picker.");
       this.record(record.id);await this.assertSourceTree(selected);
-      if(record.sources.length>=100 && !record.sources.some(item=>item.name===name))throw new Error("Source limit reached. Use a smaller set of sources.");
-      const result=await invoke(endpoint,{workspace_path:record.path,source_type:type,name,path:selected.path});
-      if(result.status!=="ok" || result.accessible!==true)throw new Error("That source could not be connected. Choose a readable local file or folder.");
+      if(record.sources.length>=100 && !record.sources.some(item=>item.name===name || item.id===input.source_id))throw new Error("Source limit reached. Use a smaller set of sources.");
+      const sourceId=input.source_id;
+      if(sourceId!==undefined && (typeof sourceId!=="string" || !/^src_[a-f0-9]{32}$/.test(sourceId)))throw new Error("Choose an existing source to reconnect.");
+      const result=await invoke(endpoint,{workspace_path:record.path,source_type:type,name,path:selected.path,source_id:sourceId,new_source:input.new_source===true});
+      if(result.status!=="ok" || result.accessible!==true)throw new Error(typeof result.detail==="string"&&result.detail.length<500?result.detail:"That source could not be connected. Choose a readable local file or folder.");
       const data=this.read();const current=data.workspaces.find(item=>item.id===record.id)!;
-      current.sources=current.sources.filter(item=>item.name!==name);current.sources.push({...selected,type,name});this.write(data);this.selections.delete(input.path as string);return result;
+      current.sources=current.sources.filter(item=>result.source_id && item.id?item.id!==result.source_id:item.name!==name);current.sources.push({...selected,id:result.source_id,type,name});this.write(data);this.selections.delete(input.path as string);return result;
     });
     if(endpoint==="/ingest" || endpoint==="/refresh") {
       const info=await this.engine("/workspace/info",{workspace_path:record.path});
       if(info.status!=="ok" || !Array.isArray(info.sources))throw new Error("Source configuration could not be checked.");
       for(const source of info.sources) {
-        if(endpoint==="/refresh" && input.source_name && source.name!==input.source_name)continue;
-        const approval=record.sources.find(item=>item.name===source.name && item.type===source.type && item.path===source.path);
+        if(endpoint==="/refresh" && (input.source_id ? source.id!==input.source_id : input.source_name && source.name!==input.source_name))continue;
+        const approval=record.sources.find(item=>(item.id?item.id===source.id:item.name===source.name) && item.type===source.type && item.path===source.path);
         if(!approval || source.url || source.auth || Object.keys(source.options||{}).length)throw new Error("Select each source again with the native picker before importing this workspace.");
         unchanged(approval);await this.assertSourceTree(approval);
       }
     }
     const result=await invoke(endpoint,request);
-    if(endpoint==="/workspace/info" && Array.isArray(result.sources))return {...result,sources:result.sources.map((source:any)=>({...source,path:null,url:null,options:{},auth:undefined}))};
+    if(endpoint==="/workspace/info" && Array.isArray(result.sources))return {...result,sources:result.sources.map((source:any)=>{
+      const approval=record.sources.find(item=>(item.id?item.id===source.id:item.name===source.name)&&item.type===source.type&&item.path===source.path);
+      return {...source,path:null,url:null,options:{},auth:undefined,approved:!!approval&&!source.url&&!source.auth&&!Object.keys(source.options||{}).length,selection_kind:approval?(approval.directory?"directory":"file"):(["analytics","support"].includes(source.type)?"file":"directory")};
+    })};
     return result;
   }
   private async assertSourceTree(source:Identity) {

@@ -15,6 +15,7 @@ import traceback
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request
@@ -99,6 +100,8 @@ class InitRequest(BaseModel):
 
 
 class ConnectRequest(BaseModel):
+    source_id: str | None = Field(default=None, pattern=r"^src_[a-f0-9]{32}$")
+    new_source: bool = False
     workspace_path: str
     source_type: str
     name: str
@@ -292,9 +295,11 @@ def workspace_info(req: WorkspaceRequest):
 
     # Count evidence items
     evidence_count = 0
+    evidence_summary = {}
     kg = _try_get_kg(req.workspace_path)
     if kg:
         evidence_count = len(kg)
+        evidence_summary = kg.store.summary
 
     return {
         "status": "ok",
@@ -302,6 +307,7 @@ def workspace_info(req: WorkspaceRequest):
         "description": config.description,
         "sources": [s.model_dump() for s in config.sources],
         "evidence_count": evidence_count,
+        "evidence_summary": evidence_summary,
         "model": config.model,
     }
 
@@ -312,15 +318,25 @@ def workspace_info(req: WorkspaceRequest):
 def connect_source(req: ConnectRequest):
     base = Path(req.workspace_path)
     config = load_config(base)
-    source = SourceConfig(type=req.source_type, name=req.name, path=req.path, url=req.url)
+    existing = next((item for item in config.sources if item.id == req.source_id), None) if req.source_id else None
+    if req.source_id and existing is None:
+        raise HTTPException(404, "Source identity not found")
+    if existing and existing.type != req.source_type:
+        raise HTTPException(409, "Reconnect a source with its original type")
+    named = next((item for item in config.sources if item.name == req.name), None)
+    if named and ((req.new_source and not existing) or (existing and named.id != existing.id)):
+        raise HTTPException(409, "Another source already uses this name. Choose a distinct name.")
+    if not existing and not req.new_source:
+        existing = named  # Compatibility for the trusted CLI and older clients.
+    source = SourceConfig(id=existing.id if existing else "src_" + uuid4().hex,
+                          type=req.source_type, name=req.name, path=req.path, url=req.url,
+                          legacy_names=existing.legacy_names if existing else [])
+    connector = get_connector(req.source_type)(source)
+    if not connector.validate():
+        raise HTTPException(422, "Source is inaccessible; its previous configuration was retained")
     config.add_source(source)
     save_config(config, base)
-
-    connector_cls = get_connector(req.source_type)
-    connector = connector_cls(source)
-    valid = connector.validate()
-
-    return {"status": "ok", "name": req.name, "type": req.source_type, "accessible": valid}
+    return {"status": "ok", "source_id": source.id, "name": req.name, "type": req.source_type, "accessible": True}
 
 
 # ---------- Ingest ----------
@@ -346,10 +362,10 @@ def ingest(req: WorkspaceRequest):
             evidence = import_source(kg, source)
             count = len(evidence)
             total += count
-            results.append({"name": source.name, "type": source.type, "items": count})
+            results.append({"name": source.name, "type": source.type, "items": count, "source_id": source.id})
         except Exception as e:
             logger.debug("Source ingestion failed; returning the existing per-source error.", exc_info=True)
-            results.append({"name": source.name, "type": source.type, "items": 0, "error": str(e)})
+            results.append({"name": source.name, "type": source.type, "items": 0, "source_id": source.id, "error": str(e)})
 
     summary = kg.store.summary
 
@@ -357,12 +373,13 @@ def ingest(req: WorkspaceRequest):
     act.record(req.workspace_path, "ingest", f"Ingested {total} evidence items",
                metadata={"total": total, "sources": len(results)})
 
-    return {"status": import_status(results), "total": total, "sources": results, "summary": summary}
+    return {"status": import_status(results), "total": len(kg), "imported": total, "sources": results, "summary": summary}
 
 
 # ---------- Refresh ----------
 
 class RefreshRequest(BaseModel):
+    source_id: str = Field(default="", pattern=r"^(src_[a-f0-9]{32})?$")
     workspace_path: str
     source_name: str = ""  # empty = refresh all
 
@@ -379,8 +396,8 @@ def refresh(req: RefreshRequest):
     _kg_workspace_path = req.workspace_path
 
     sources_to_refresh = config.sources
-    if req.source_name:
-        sources_to_refresh = [s for s in config.sources if s.name == req.source_name]
+    if req.source_id or req.source_name:
+        sources_to_refresh = [s for s in config.sources if (s.id == req.source_id if req.source_id else s.name == req.source_name)]
         if not sources_to_refresh:
             raise HTTPException(404, f"Source '{req.source_name}' not found")
 

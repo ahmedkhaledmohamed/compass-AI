@@ -35,7 +35,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
   const epoch = useRef(0);
   const [activeAI, setActiveAI] = useState<NativeAIConnection | null>(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
-  const [sources, setSources] = useState<Array<{ name: string; items: number }>>([]);
+  const [sources, setSources] = useState<Array<{ id: string; name: string; items: number }>>([]);
   const [task, setTask] = useState<DecisionTask | null>(null);
   const [job, setJob] = useState<GenerationJob | null>(null);
   const working = !!job && (["queued", "running"].includes(job.state) || job.draining);
@@ -56,7 +56,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
       try {
         const [list, available, aiStatus] = await Promise.all([
           call<{ tasks: TaskSummary[] }>(workspace, "list"),
-          call<{ sources: Array<{ name: string; items: number }> }>(workspace, "sources"),
+          call<{ sources: Array<{ id: string; name: string; items: number }> }>(workspace, "sources"),
           window.compass.ai.status(),
         ]);
         if (epoch.current !== token) return;
@@ -191,7 +191,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
           <label className="block space-y-2"><span>What would a useful result let you do?</span><input className={input} required maxLength={2000} value={completion} onChange={(event) => setCompletion(event.target.value)} disabled={!!busy || working} /></label>
           <fieldset disabled={!!busy || working} className="space-y-3"><legend className="mb-2 font-medium">Select evidence sources</legend>
             {sources.length === 0 && <p className="text-neutral-400">Import evidence in <Link className="underline text-compass-accent" to="/workspace">Workspace</Link> before creating a task.</p>}
-            {sources.map((source) => <label key={source.name} className="flex items-center gap-3"><input type="checkbox" className="accent-indigo-500 focus-visible:outline focus-visible:outline-2" checked={selected.includes(source.name)} onChange={(event) => setSelected(event.target.checked ? [...selected, source.name] : selected.filter((name) => name !== source.name))} /><span>{source.name} <span className="text-neutral-400 text-sm">({source.items} items)</span></span></label>)}
+            {sources.map((source) => <label key={source.id} className="flex items-center gap-3"><input type="checkbox" className="accent-indigo-500 focus-visible:outline focus-visible:outline-2" checked={selected.includes(source.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, source.id] : selected.filter((name) => name !== source.id))} /><span>{source.name} <span className="text-neutral-400 text-sm">({source.items} items)</span></span></label>)}
           </fieldset>
           <p className="text-sm text-neutral-400">Creating a task saves its evidence selection locally. Generating a draft sends the selected evidence to your configured AI provider.</p>
           <button type="submit" className={primary} disabled={!!busy || working || selected.length === 0}>Save task and inspect evidence</button>

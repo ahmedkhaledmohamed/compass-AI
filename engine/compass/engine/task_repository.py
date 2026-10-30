@@ -34,13 +34,13 @@ class TaskRepository:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise ValueError(f"Unsupported task database version: {version}")
             if version == 0:
                 db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL)")
                 db.execute("CREATE TABLE revisions (task_id TEXT NOT NULL, revision INTEGER NOT NULL, "
                            "payload TEXT NOT NULL, PRIMARY KEY(task_id, revision))")
-            if version in (1, 2):
+            if version in (1, 2, 3):
                 self._backup_version(db, version)
             if version in (0, 1):
                 db.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), "
@@ -51,8 +51,8 @@ class TaskRepository:
                 db.execute("CREATE UNIQUE INDEX one_active_job ON jobs((1)) WHERE state IN ('queued','running')")
             if version == 2:
                 db.execute("ALTER TABLE jobs ADD COLUMN completion TEXT")
-            if version in (0, 1, 2):
-                db.execute("PRAGMA user_version=3")
+            if version in (0, 1, 2, 3):
+                db.execute("PRAGMA user_version=4")
 
     def _backup_version(self, db, version):
         directory = self.path.parent / "task-backups"

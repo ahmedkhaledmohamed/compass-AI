@@ -53,6 +53,37 @@ Review = Literal["unreviewed", "accepted", "rejected"]
 ArtifactKind = Literal["brief", "handoff"]
 
 
+class PassageLocator(StrictModel):
+    evidence_id: str
+    document_id: str
+    version: str
+    chunk_id: str
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
+    rank: int = Field(ge=1)
+    score: float | None = None
+    reason: Literal["all_saved_text", "keyword_ranked", "accepted_brief"] = "keyword_ranked"
+
+
+class RetrievalReceipt(StrictModel):
+    version: str = "scoped-passages-v1"
+    snapshot_id: str
+    status: Literal["complete", "partial", "empty"]
+    query_terms: list[str]
+    query_truncated: bool = False
+    selected_documents: int
+    total_passages: int
+    selection_mode: Literal["all_saved_text", "keyword_ranked"]
+    matched_passages: int | None
+    total_characters: int
+    provided_characters: int
+    import_omission_documents: int = 0
+    unknown_import_documents: int = 0
+    passages: list[PassageLocator]
+
+
 class Artifact(StrictModel):
     body: DraftBody
     reviews: list[Review]
@@ -62,6 +93,7 @@ class Artifact(StrictModel):
     provider: str
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
+    retrieval: RetrievalReceipt | None = None
     workflow_version: str = "decision-task-v1"
     created_at: str = Field(default_factory=now)
     edited_by_user: bool = False

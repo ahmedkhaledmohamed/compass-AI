@@ -14,6 +14,18 @@ export interface DraftBody {
   alternatives: string[];
   unknowns: string[];
 }
+export interface PassageLocator {
+  evidence_id:string;document_id:string;version:string;chunk_id:string;start:number;end:number;line_start:number;line_end:number;rank:number;score?:number|null;reason:"all_saved_text"|"keyword_ranked"|"accepted_brief";
+}
+export interface RetrievalReceipt {
+  version:string;snapshot_id:string;status:"complete"|"partial"|"empty";query_terms:string[];query_truncated:boolean;
+  selected_documents:number;total_passages:number;selection_mode:"all_saved_text"|"keyword_ranked";matched_passages:number|null;total_characters:number;provided_characters:number;
+  import_omission_documents:number;unknown_import_documents:number;passages:PassageLocator[];
+}
+export interface RetrievedPassage {
+  id:string;document_id:string;version:string;chunk_id:string;source:string;source_name:string;source_type:string;title:string;
+  start:number;end:number;line_start:number;line_end:number;content:string;
+}
 export interface Artifact {
   body: DraftBody;
   reviews: Review[];
@@ -24,6 +36,7 @@ export interface Artifact {
   input_tokens?: number | null;
   output_tokens?: number | null;
   edited_by_user: boolean;
+  retrieval?:RetrievalReceipt|null;
 }
 export interface DecisionTask {
   id: string;

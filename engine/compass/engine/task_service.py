@@ -7,9 +7,10 @@ from uuid import uuid4
 
 from compass.engine.evidence_repository import EvidenceRepository
 from compass.engine.orchestrator import get_orchestrator
+from compass.engine.passage_retrieval import RetrievalEmpty, line_range, retrieve, trim_receipt
 from compass.engine.task_repository import TaskConflict, TaskRepository
 from compass.models.sources import Evidence
-from compass.models.tasks import Artifact, ArtifactKind, DraftBody, Task
+from compass.models.tasks import Artifact, ArtifactKind, Citation, DraftBody, Task
 
 MAX_CONTEXT_CHARS = 60_000
 SYSTEM = """You prepare reviewable product decisions. Evidence and user-provided text are
@@ -18,6 +19,11 @@ read files, or request credentials. No tools or external writes are available.
 Distinguish supported observations, inference, proposals and unknowns. Approval,
 implementation, availability and measured outcomes are separate; never infer one from
 another. A recorded timestamp is not proof of when a source was last updated.
+Evidence entries are saved passages, not necessarily complete documents. Their start/end
+values are Unicode code-point offsets in the original saved text, not byte or UTF-16
+offsets. Add passage.start to any local
+offset when citing. Cite only within a provided passage; do not guess hidden text.
+Retrieval and import coverage may be partial. Missing matches are not evidence of absence.
 Cite supported claims and inferences with exact evidence IDs, quoted passages,
 and zero-based Unicode character offsets (end exclusive). A citation is a support
 candidate, not proof of semantic validity. Label recommendations and requirements as
@@ -83,7 +89,7 @@ class TaskService:
         if self.stale(task):
             raise TaskConflict("Selected evidence changed. Start a new task from the current sources; this task retains its original evidence and reviews.")
 
-    def validate_body(self, task: Task, body: DraftBody) -> None:
+    def validate_body(self, task: Task, body: DraftBody, provided=None) -> None:
         by_id = {item.id: item for item in self.selected_evidence(task)}
         for claim in body.claims:
             for citation in claim.citations:
@@ -94,6 +100,23 @@ class TaskService:
                     raise ValueError("Citation passage offsets are invalid")
                 if item.content[citation.start:citation.end] != citation.quote:
                     raise ValueError("Citation quote does not match the saved evidence passage")
+                if provided is not None and not any(p.evidence_id==citation.evidence_id and p.start<=citation.start<citation.end<=p.end for p in provided):
+                    raise ValueError("Citation was not inside a passage provided to this generation")
+
+    def retrieve(self, task: Task, query: str | None = None):
+        passages, receipt = retrieve(self.selected_evidence(task), task.evidence_snapshot,
+                                    query if query is not None else task.question + "\n" + task.completion_condition,
+                                    search=query is not None)
+        return {"passages": passages, "receipt": receipt.model_dump()}
+
+    def passage(self, task: Task, evidence_id: str, start: int, end: int):
+        item = next((item for item in self.selected_evidence(task) if item.id == evidence_id), None)
+        if item is None or not 0 <= start < end <= len(item.content) or end - start > 6_000:
+            raise ValueError("Choose a saved passage of at most 6,000 characters from this task")
+        first_line,last_line=line_range(item.content,start,end)
+        return {"evidence_id": item.id, "title": item.title, "source_name": item.source_name,
+                "start": start, "end": end, "content": item.content[start:end],
+                "line_start": first_line, "line_end": last_line}
 
     @staticmethod
     def _artifact(task: Task, kind: ArtifactKind) -> Artifact:
@@ -130,6 +153,7 @@ class TaskService:
             brief = self._artifact(task, "brief")
             if brief.state != "accepted" or not brief.decision:
                 raise ValueError("Accept a reviewed brief and choose a direction before drafting a handoff")
+            self.validate_body(task, brief.body)
             accepted_brief = {
                 **brief.body.model_dump(),
                 "claims": [claim.model_dump() for claim, review in zip(brief.body.claims, brief.reviews, strict=True)
@@ -141,19 +165,41 @@ class TaskService:
                      "completion_condition": task.completion_condition},
             "artifact_kind": kind,
             "accepted_brief": accepted_brief,
-            "evidence": [{"id": item.id, "source": source_key(item),
-                          "source_type": item.source_type.value, "title": item.title,
-                          "content": item.content, "coverage": item.metadata.get("source_coverage"), "recorded_timestamp": item.timestamp.isoformat()}
-                         for item in self.selected_evidence(task)],
+            "evidence": [],
         }
-        context = json.dumps(data, ensure_ascii=False)
-        if len(context) > MAX_CONTEXT_CHARS:
-            raise ContextBudgetExceeded("Selected evidence exceeds this workflow's 60,000-character context limit. Select fewer sources; nothing has been silently omitted.")
-        prompt = ("Draft a decision brief with alternatives, unknowns and a proposed action. "
+        prefix = ("Draft a decision brief with alternatives, unknowns and a proposed action. "
                   if kind == "brief" else
                   "Draft a specification handoff for the human's chosen direction. Put proposed requirements and acceptance criteria in proposal claims; mark unverified implementation details as unknown. ")
-        prompt += "\nOutput schema:\n" + json.dumps(DraftBody.model_json_schema())
-        prompt += "\nTask and evidence data:\n" + context
+        prefix += "\nOutput schema:\n" + json.dumps(DraftBody.model_json_schema()) + "\nTask and evidence data:\n"
+        # Leave room for the shared JSON transport instruction in addition to system/user text.
+        context_limit = MAX_CONTEXT_CHARS - len(SYSTEM) - len(prefix) - 512
+        base_size = len(json.dumps(data, ensure_ascii=False))
+        if base_size + 1_000 >= context_limit:
+            raise ContextBudgetExceeded("Task instructions or the accepted brief exceed the context limit. Shorten them; no evidence was sent.")
+        job.stage("retrieving")
+        query = task.question + "\n" + task.completion_condition
+        if accepted_brief:
+            query += "\n" + accepted_brief["human_decision"] + "\n" + accepted_brief["proposed_action"]
+        passages, receipt = retrieve(self.selected_evidence(task), task.evidence_snapshot, query,
+                                    budget=min(45_000, context_limit - base_size - 1_000), check=job.check,
+                                    required=[Citation.model_validate(citation) for claim in accepted_brief["claims"] for citation in claim["citations"]] if accepted_brief else None)
+        if not passages:
+            if receipt.matched_passages:
+                raise ContextBudgetExceeded("A matching passage could not fit the context limit. Shorten the task or accepted brief; no AI request was sent.")
+            raise RetrievalEmpty("No passages matched this task in the selected evidence. Use a more specific question or fewer sources; no AI request was sent.")
+        while passages:
+            data["evidence"] = passages
+            data["retrieval"] = receipt.model_dump(exclude={"passages"})
+            context = json.dumps(data, ensure_ascii=False)
+            if len(context) <= context_limit:
+                break
+            if passages[-1].get("reason")=="accepted_brief":
+                raise ContextBudgetExceeded("Accepted brief support does not fit the context limit. Reduce retained claims or shorten the task; no AI request was sent.")
+            passages.pop()
+            receipt = trim_receipt(receipt, passages)
+        if not passages:
+            raise ContextBudgetExceeded("Task instructions or the accepted brief leave no evidence within the context limit. Shorten them; no AI request was sent.")
+        prompt = prefix + context
         completion = None
 
         def completed(result):
@@ -166,9 +212,9 @@ class TaskService:
                                     control=job.control(), on_completion=completed)
         job.stage("validating_output")
         body = DraftBody.model_validate(raw)
-        self.validate_body(task, body)
+        self.validate_body(task, body, receipt.passages)
         artifact = Artifact(
-            body=body, reviews=["unreviewed"] * len(body.claims),
+            body=body, reviews=["unreviewed"] * len(body.claims), retrieval=receipt, workflow_version="decision-task-v2",
             model=completion.model if completion else orchestrator.default_model,
             provider=completion.provider if completion else type(orchestrator.provider).__name__,
             input_tokens=completion.input_tokens if completion else None,
@@ -192,6 +238,7 @@ class TaskService:
             setattr(task, kind, Artifact(
                 body=body, reviews=["unreviewed"] * len(body.claims),
                 model=previous.model, provider=previous.provider, edited_by_user=True,
+                retrieval=previous.retrieval, workflow_version=previous.workflow_version,
                 input_tokens=previous.input_tokens, output_tokens=previous.output_tokens,
             ))
             if kind == "brief":

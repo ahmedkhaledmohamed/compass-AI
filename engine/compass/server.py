@@ -1144,12 +1144,18 @@ def discover_stream(req: WorkspaceRequest):
 # ---------- Document CRUD endpoints ----------
 
 from compass.documents import (
+    InvalidDocumentPath,
     create_document,
     delete_document,
     get_document,
     list_documents,
     save_document,
 )
+
+
+@app.exception_handler(InvalidDocumentPath)
+async def invalid_document_path_handler(request: Request, exc: InvalidDocumentPath):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 class DocumentSaveRequest(BaseModel):

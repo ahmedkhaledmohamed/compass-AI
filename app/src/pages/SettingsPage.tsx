@@ -1,10 +1,9 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Settings, BarChart3, RotateCcw, LinkIcon } from "lucide-react";
+import { Settings, BarChart3, RotateCcw } from "lucide-react";
 import { useSettingsStore } from "../stores/settings";
 import { resetOnboarding } from "./OnboardingPage";
 import AIConnections from "../components/settings/AIConnections";
-import ConnectedAccounts from "../components/settings/ConnectedAccounts";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -39,11 +38,6 @@ export default function SettingsPage() {
       </Section>
 
       <AIConnections />
-
-      {/* Connected Accounts */}
-      <Section icon={LinkIcon} title="Connected Accounts">
-        <ConnectedAccounts />
-      </Section>
 
       {/* Reset onboarding */}
       <Section icon={RotateCcw} title="Onboarding">

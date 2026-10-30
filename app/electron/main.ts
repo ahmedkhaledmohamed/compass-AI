@@ -19,10 +19,9 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-import { startEngine, stopEngine, engineFetch, engineRequest } from "./engine-bridge";
-import { registerOAuthIPC, handleOAuthCallback } from "./oauth";
-import { getProvider, getAllProviders } from "./oauth-providers";
+import { startEngine, stopEngine, engineFetch } from "./engine-bridge";
 import { handleMainIPC, trustMainWindow } from "./ipc";
+import { requireReleaseEndpoint } from "./release-policy";
 import { AIVault } from "./ai-vault";
 import { AIConnections, engineOperation } from "./ai-connections";
 
@@ -65,18 +64,6 @@ function createWindow() {
   });
 }
 
-// Register compass:// protocol for OAuth callbacks
-if (process.defaultApp) {
-  // Dev mode: register with the path to electron
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("compass", process.execPath, [
-      path.resolve(process.argv[1]),
-    ]);
-  }
-} else {
-  app.setAsDefaultProtocolClient("compass");
-}
-
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   aiConnections = new AIConnections(new AIVault(path.join(app.getPath("userData"),"ai-connections.enc"), {
@@ -85,8 +72,6 @@ app.whenReady().then(async () => {
     decrypt:value => safeStorage.decryptString(value),
   }), url => shell.openExternal(url), (endpoint,body) => engineFetch(endpoint,body ? {body} : undefined), undefined, process.env.COMPASS_HF_CLIENT_ID || "");
   createWindow();
-  registerOAuthIPC();
-  registerProviderIPC();
 
   try {
     await startEngine();
@@ -102,19 +87,7 @@ app.whenReady().then(async () => {
   }
 });
 
-// Handle compass:// protocol on macOS (open-url event)
-app.on("open-url", (_event, url) => {
-  if (url.startsWith("compass://oauth/callback")) {
-    handleOAuthCallback(url);
-  }
-});
-
-// Handle compass:// protocol on Windows/Linux (second-instance event)
-app.on("second-instance", (_event, commandLine) => {
-  const url = commandLine.find((arg) => arg.startsWith("compass://"));
-  if (url && url.startsWith("compass://oauth/callback")) {
-    handleOAuthCallback(url);
-  }
+app.on("second-instance", () => {
   // Focus existing window
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -167,90 +140,10 @@ handleMainIPC("save-file", async (_event, defaultName: string, content: string) 
   return result.filePath;
 });
 
-// IPC: Export document to file
-handleMainIPC(
-  "export-document",
-  async (
-    _event,
-    defaultName: string,
-    content: string,
-    format: "md" | "html" | "pdf" | "docx",
-  ) => {
-    const filterMap: Record<string, Electron.FileFilter[]> = {
-      md: [{ name: "Markdown", extensions: ["md"] }],
-      html: [{ name: "HTML", extensions: ["html"] }],
-      pdf: [{ name: "PDF", extensions: ["pdf"] }],
-      docx: [{ name: "Word Document", extensions: ["docx"] }],
-    };
-    const result = await dialog.showSaveDialog({
-      defaultPath: defaultName,
-      filters: filterMap[format] || [],
-    });
-    if (result.canceled || !result.filePath) return null;
-
-    if (format === "docx") {
-      // Content is base64-encoded binary
-      const fsPromises = await import("fs/promises");
-      const buffer = Buffer.from(content, "base64");
-      await fsPromises.writeFile(result.filePath, buffer);
-    } else if (format === "pdf") {
-      // Use a hidden BrowserWindow to render HTML then printToPDF
-      const pdfWin = new BrowserWindow({
-        show: false,
-        width: 800,
-        height: 600,
-        webPreferences: { offscreen: true },
-      });
-      await pdfWin.loadURL(
-        `data:text/html;charset=utf-8,${encodeURIComponent(content)}`,
-      );
-      const pdfData = await pdfWin.webContents.printToPDF({
-        margins: { marginType: "default" },
-        printBackground: true,
-      });
-      const fsPromises = await import("fs/promises");
-      await fsPromises.writeFile(result.filePath, pdfData);
-      pdfWin.destroy();
-    } else {
-      const fsPromises = await import("fs/promises");
-      await fsPromises.writeFile(result.filePath, content, "utf-8");
-    }
-    return result.filePath;
-  },
-);
-
-// IPC: Capture HTML as PNG screenshot
-handleMainIPC(
-  "capture-html-png",
-  async (_event, html: string, defaultName: string) => {
-    const result = await dialog.showSaveDialog({
-      defaultPath: defaultName,
-      filters: [{ name: "PNG Image", extensions: ["png"] }],
-    });
-    if (result.canceled || !result.filePath) return null;
-
-    const captureWin = new BrowserWindow({
-      show: false,
-      width: 1280,
-      height: 800,
-      webPreferences: { offscreen: true },
-    });
-    await captureWin.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
-    );
-    // Wait for content to render
-    await new Promise((r) => setTimeout(r, 1000));
-    const image = await captureWin.webContents.capturePage();
-    const fsPromises = await import("fs/promises");
-    await fsPromises.writeFile(result.filePath, image.toPNG());
-    captureWin.destroy();
-    return result.filePath;
-  },
-);
-
 // IPC: Engine API call (proxied through main process via engine-bridge)
 handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) => {
   try {
+    requireReleaseEndpoint(endpoint);
     const operation=engineOperation(endpoint);
     if(operation === "native-only" && aiConnections) return {status:"error",message:"Use AI connections to change this provider or model."};
     if(operation === "generation" && aiConnections) return await aiConnections.runGeneration(endpoint,body);
@@ -259,46 +152,6 @@ handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) =>
     return { status: "error", message: String(err) };
   }
 });
-
-// IPC: Engine SSE stream (for chat streaming)
-handleMainIPC(
-  "engine-stream",
-  async (event, endpoint: string, body?: unknown) => {
-    try {
-      const res = await engineRequest(endpoint, { method: "POST", body });
-
-      if (!res.body) return { status: "error", message: "No response body" };
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            event.sender.send("engine-stream-data", data);
-          } else if (line.startsWith("event: ")) {
-            const eventName = line.slice(7).trim();
-            // next data line will contain the event data
-          }
-        }
-      }
-
-      event.sender.send("engine-stream-data", JSON.stringify({ done: true }));
-      return { status: "ok" };
-    } catch (err) {
-      return { status: "error", message: String(err) };
-    }
-  }
-);
 
 // IPC: Engine health check
 handleMainIPC("engine-health", async () => {
@@ -463,17 +316,6 @@ handleMainIPC("credential-list", async () => {
 });
 
 // --- OAuth Provider Registry IPC ---
-
-function registerProviderIPC(): void {
-  handleMainIPC("provider-get", async (_event, id: string) => {
-    return getProvider(id);
-  });
-
-  handleMainIPC("provider-list", async () => {
-    return getAllProviders();
-  });
-}
-
 
 function nativeAI(): AIConnections {
   if(!aiConnections) throw new Error("AI connections are still starting.");

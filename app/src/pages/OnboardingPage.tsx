@@ -9,11 +9,8 @@ import { clsx } from "clsx";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useWorkspaceManager } from "../stores/workspaceManager";
 import { useNavigate } from "react-router-dom";
-import StepSignIn from "../components/onboarding/StepSignIn";
-import StepTemplate from "../components/onboarding/StepTemplate";
-import StepSources from "../components/onboarding/StepSources";
 
-type Step = "welcome" | "signin" | "template" | "setup" | "sources" | "launching";
+type Step = "welcome" | "setup" | "launching";
 
 const ONBOARDING_KEY = "compass-onboarding-complete";
 
@@ -29,97 +26,41 @@ function completeOnboarding(): void {
   localStorage.setItem(ONBOARDING_KEY, "true");
 }
 
-interface TemplateInfo {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  recommended_sources: string[];
-  default_chat_mode: string;
-  example_questions: string[];
-}
-
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>("welcome");
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateInfo | null>(null);
   const [productName, setProductName] = useState("");
   const [productDesc, setProductDesc] = useState("");
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
   const addWorkspaceEntry = useWorkspaceManager((s) => s.addWorkspace);
   const navigate = useNavigate();
 
-  const stepIndex = ["welcome", "signin", "template", "setup", "sources"].indexOf(step);
-  const totalSteps = 5;
-
-  function handleTemplateSelect(template: TemplateInfo | null) {
-    setSelectedTemplate(template);
-    if (template) {
-      setProductName("");
-      setProductDesc(template.description);
-    }
-    setStep("setup");
-  }
+  const stepIndex = ["welcome", "setup"].indexOf(step);
+  const totalSteps = 2;
 
   async function handlePickFolder() {
-    const selected = await window.compass?.app.selectDirectory();
-    if (selected) setWorkspacePath(selected);
+    setError("");
+    try {
+      const selected = await window.compass.app.selectDirectory();
+      if (selected) setWorkspacePath(selected);
+    } catch {setError("The folder picker could not be opened. Try again.");}
   }
 
-  async function handleFinish(sources: { type: string; path: string; name: string }[]) {
-    if (!workspacePath) return;
-    setStep("launching");
-
+  async function handleFinish() {
+    if (!workspacePath || !productName.trim()) return;
+    setError(""); setStep("launching");
     try {
-      // Initialize workspace (with template or plain)
-      if (selectedTemplate) {
-        await window.compass?.engine.call("/templates/init", {
-          workspace_path: workspacePath,
-          template_id: selectedTemplate.id,
-          product_name: productName,
-          product_description: productDesc,
-        });
-      } else {
-        await window.compass?.engine.call("/init", {
-          workspace_path: workspacePath,
-          name: productName,
-          description: productDesc,
-        });
-      }
-
-      // Connect sources
-      for (const source of sources) {
-        try {
-          await window.compass?.engine.call("/connect", {
-            workspace_path: workspacePath,
-            source_type: source.type,
-            name: source.name,
-            path: source.path || undefined,
-          });
-        } catch (err) {
-          console.error(`Failed to connect source ${source.name}:`, err);
-        }
-      }
-
-      // Register workspace
-      setWorkspace(workspacePath, productName, productDesc);
-      await addWorkspaceEntry({
-        name: productName,
-        description: productDesc,
-        path: workspacePath,
-      });
-
-      // Auto-trigger ingestion
-      if (sources.length > 0) {
-        useWorkspaceStore.getState().triggerIngestion(workspacePath);
-      }
-
-      completeOnboarding();
-      navigate("/workspace");
-    } catch (err) {
-      console.error("Onboarding finish failed:", err);
-      setStep("sources");
+      const result = await window.compass.engine.call("/init", {
+        workspace_path: workspacePath, name: productName.trim(), description: productDesc.trim(),
+      }) as {status:string; message?:string};
+      if (result.status !== "ok") throw new Error(result.message || "Workspace could not be created. Try another folder.");
+      await addWorkspaceEntry({name:productName.trim(),description:productDesc.trim(),path:workspacePath});
+      setWorkspace(workspacePath,productName.trim(),productDesc.trim());
+      completeOnboarding(); navigate("/workspace",{replace:true});
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workspace could not be created. Try again."); setStep("setup");
     }
   }
 
@@ -149,33 +90,19 @@ export default function OnboardingPage() {
               Welcome to Compass
             </h1>
             <p className="text-neutral-400 mb-2">
-              The AI-native product discovery tool.
+              Evidence, a reviewed decision, then a handoff.
             </p>
             <p className="text-sm text-neutral-500 mb-8 max-w-sm mx-auto">
-              Connect your product's sources of truth — code, docs, data,
-              and user feedback — to surface evidence-grounded opportunities.
+              Choose a local workspace, import evidence, and connect your own AI account when you are ready to draft.
             </p>
             <button
-              onClick={() => setStep("signin")}
+              onClick={() => setStep("setup")}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-compass-accent hover:bg-compass-accent-hover text-white font-medium transition-colors"
             >
               Get Started
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-        )}
-
-        {/* Step: Sign In */}
-        {step === "signin" && (
-          <StepSignIn onNext={() => setStep("template")} />
-        )}
-
-        {/* Step: Template */}
-        {step === "template" && (
-          <StepTemplate
-            onSelect={handleTemplateSelect}
-            onBack={() => setStep("signin")}
-          />
         )}
 
         {/* Step: Setup (name + folder) */}
@@ -186,19 +113,15 @@ export default function OnboardingPage() {
               <h2 className="text-xl font-semibold text-compass-text mb-2">
                 Name Your Product
               </h2>
-              {selectedTemplate && (
-                <p className="text-xs text-compass-muted">
-                  Template: {selectedTemplate.name}
-                </p>
-              )}
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-neutral-400 mb-1">
+                <label htmlFor="product-name" className="block text-sm text-neutral-400 mb-1">
                   Product name
                 </label>
                 <input
+                  id="product-name"
                   type="text"
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
@@ -207,10 +130,10 @@ export default function OnboardingPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-neutral-400 mb-1">
+                <label htmlFor="product-description" className="block text-sm text-neutral-400 mb-1">
                   Short description
                 </label>
-                <textarea
+                <textarea id="product-description"
                   value={productDesc}
                   onChange={(e) => setProductDesc(e.target.value)}
                   placeholder="What does this product do?"
@@ -234,38 +157,29 @@ export default function OnboardingPage() {
               </div>
             </div>
 
+            {error && <p role="alert" className="mt-4 text-sm text-red-400">{error}</p>}
             <div className="flex justify-between mt-8">
               <button
-                onClick={() => setStep("template")}
+                onClick={() => setStep("welcome")}
                 className="text-sm text-compass-muted hover:text-compass-text"
               >
                 Back
               </button>
               <button
-                onClick={() => setStep("sources")}
-                disabled={!productName || !workspacePath}
+                onClick={handleFinish}
+                disabled={!productName.trim() || !workspacePath}
                 className={clsx(
                   "inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors",
-                  productName && workspacePath
+                  productName.trim() && workspacePath
                     ? "bg-compass-accent hover:bg-compass-accent-hover text-white"
                     : "bg-compass-card text-neutral-600 cursor-not-allowed"
                 )}
               >
-                Next
+                Create workspace
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
-        )}
-
-        {/* Step: Sources */}
-        {step === "sources" && workspacePath && (
-          <StepSources
-            recommendedSources={selectedTemplate?.recommended_sources || []}
-            workspacePath={workspacePath}
-            onNext={handleFinish}
-            onBack={() => setStep("setup")}
-          />
         )}
 
         {/* Launching */}
@@ -276,7 +190,7 @@ export default function OnboardingPage() {
               Setting up your workspace...
             </h2>
             <p className="text-sm text-neutral-400">
-              Initializing project and connecting sources.
+              Creating local workspace storage.
             </p>
           </div>
         )}

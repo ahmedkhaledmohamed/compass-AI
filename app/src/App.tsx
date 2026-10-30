@@ -5,16 +5,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import WorkPage from "./pages/WorkPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import EvidencePage from "./pages/EvidencePage";
-import ConflictsPage from "./pages/ConflictsPage";
-import DiscoverPage from "./pages/DiscoverPage";
-import ChatPage from "./pages/ChatPage";
-import DashboardPage from "./pages/DashboardPage";
-import DocumentsPage from "./pages/DocumentsPage";
-import PresentationsPage from "./pages/PresentationsPage";
-import PrototypesPage from "./pages/PrototypesPage";
 import SettingsPage from "./pages/SettingsPage";
 import OnboardingPage, { isOnboardingComplete } from "./pages/OnboardingPage";
-import LoginPage from "./pages/LoginPage";
 import { useSettingsStore } from "./stores/settings";
 
 type EngineState = "starting" | "setup" | "ready" | "error" | "crashed" | null;
@@ -92,20 +84,13 @@ function AppWithStartup() {
   return (
     <Routes>
       <Route path="/onboarding" element={<OnboardingPage />} />
-      <Route path="/login" element={<LoginPage />} />
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate to={needsOnboarding ? "/onboarding" : "/workspace"} replace />} />
+        <Route path="/" element={<Navigate to={needsOnboarding ? "/onboarding" : "/work"} replace />} />
         <Route path="/work/:taskId?" element={<WorkPage />} />
         <Route path="/workspace" element={<WorkspacePage />} />
         <Route path="/evidence" element={<EvidencePage />} />
-        <Route path="/conflicts" element={<ConflictsPage />} />
-        <Route path="/discover" element={<DiscoverPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/documents" element={<DocumentsPage />} />
-        <Route path="/presentations" element={<PresentationsPage />} />
-        <Route path="/prototypes" element={<PrototypesPage />} />
-        <Route path="/chat" element={<ChatPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate to="/work" replace />} />
       </Route>
     </Routes>
   );

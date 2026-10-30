@@ -9,8 +9,8 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from compass.server import app
 import compass.server as server_module
+from compass.server import app
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +69,19 @@ class TestInit:
         data = res.json()
         assert data["status"] == "ok"
         assert data["name"] == "Test Product"
+
+
+    def test_desktop_init_preserves_existing_config_and_does_not_create_git(self, client, tmp_path):
+        ws = tmp_path / "existing-product"
+        request = {"name": "Original", "workspace_path": str(ws)}
+        assert client.post("/init", json=request).status_code == 200
+        config = ws / ".compass" / "compass.yaml"
+        original = config.read_bytes()
+        assert not (ws / ".git").exists()
+        repeated = client.post("/init", json={**request, "name": "Replacement"})
+        assert repeated.status_code == 409
+        assert config.read_bytes() == original
+
 
 
 class TestConnect:

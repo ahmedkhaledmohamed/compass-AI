@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Code2, FileText, BarChart3, Mic, Headphones, Check, FolderOpen, File } from "lucide-react";
 import { clsx } from "clsx";
 import { useWorkspaceStore } from "../../stores/workspace";
-import ConnectorModeToggle from "./ConnectorModeToggle";
 
 interface SourceDef {
   type: string;
@@ -23,7 +22,7 @@ const SOURCE_DEFS: SourceDef[] = [
     icon: Code2,
     color: "text-compass-code",
     bgColor: "bg-compass-code/10",
-    description: "GitHub repo or local codebase",
+    description: "Local code folder",
     picker: "directory",
     supportsLive: true,
   },
@@ -66,18 +65,11 @@ const SOURCE_DEFS: SourceDef[] = [
   },
 ];
 
-/** Maps source type to the engine connector type when in live API mode. */
-const LIVE_SOURCE_TYPE: Record<string, string> = {
-  code: "github",
-  docs: "google_docs",
-};
-
 export default function SourceConnector() {
   const workspacePath = useWorkspaceStore((s) => s.workspacePath);
   const sources = useWorkspaceStore((s) => s.sources);
   const addSource = useWorkspaceStore((s) => s.addSource);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const [modes, setModes] = useState<Record<string, "live" | "file">>({});
 
   const connectedTypes = new Set(sources.map((s) => s.type));
 
@@ -158,26 +150,7 @@ export default function SourceConnector() {
                 </div>
               )}
             </button>
-            {connected && def.supportsLive && (
-              <ConnectorModeToggle
-                sourceType={def.type}
-                mode={modes[def.type] || "file"}
-                onModeChange={async (m) => {
-                  setModes((prev) => ({ ...prev, [def.type]: m }));
-                  // Update engine source type when switching modes
-                  if (workspacePath) {
-                    const source = sources.find((s) => s.type === def.type);
-                    const engineType = m === "live" ? (LIVE_SOURCE_TYPE[def.type] || def.type) : def.type;
-                    await window.compass.engine.call("/connect", {
-                      workspace_path: workspacePath,
-                      source_type: engineType,
-                      name: def.label,
-                      path: source?.path || "",
-                    });
-                  }
-                }}
-              />
-            )}
+
           </div>
         );
       })}

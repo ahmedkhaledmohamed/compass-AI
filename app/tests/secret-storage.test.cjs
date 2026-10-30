@@ -12,6 +12,7 @@ function fixture(t, { platform = "darwin", available = true, backend = "gnome_li
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const handlers = new Map();
   const state = { available };
+  const engineCalls=[];
   const electron = {
     app: {
       getPath: () => directory,
@@ -42,6 +43,9 @@ function fixture(t, { platform = "darwin", available = true, backend = "gnome_li
       if (name === "electron-updater") return { autoUpdater: {} };
       // Sender authorization is exercised independently in ipc.test.cjs.
       if (name === "./ipc") return { handleMainIPC: electron.ipcMain.handle };
+      if (name === "./release-policy") return require("../dist-electron/release-policy.js");
+      if (name === "./ai-connections") return {engineOperation:()=>"other"};
+      if (name === "./engine-bridge") return {engineFetch:async(endpoint)=>{engineCalls.push(endpoint);return {status:"ok"};}};
       if (name.startsWith("./")) return {};
       return require(name);
     },
@@ -54,7 +58,7 @@ function fixture(t, { platform = "darwin", available = true, backend = "gnome_li
   return {
     call: (name, ...args) => handlers.get(name)({}, ...args),
     file: path.join(directory, "secrets.enc"),
-    state,
+    state, engineCalls,
   };
 }
 
@@ -105,4 +109,14 @@ test("legacy plaintext is never returned, and explicit deletion still works", as
   await vault.call("secrets-delete", "key");
   await vault.call("credential-delete", "example");
   assert.deepEqual(JSON.parse(fs.readFileSync(vault.file, "utf8")), {});
+});
+
+test("main process rejects deferred engine calls before invoking its transport", async t => {
+  const f=fixture(t);
+  for(const endpoint of ["/git/push","/prototype/generate","/configure","/documents/delete","/chat/stream"]) {
+    assert.equal((await f.call("engine-call",endpoint,{})).status,"error");
+  }
+  assert.deepEqual(f.engineCalls,[]);
+  assert.equal((await f.call("engine-call","/tasks/list",{})).status,"ok");
+  assert.deepEqual(f.engineCalls,["/tasks/list"]);
 });

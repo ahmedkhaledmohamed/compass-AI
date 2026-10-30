@@ -3,13 +3,7 @@ import { NavLink } from "react-router-dom";
 import {
   Home,
   Database,
-  AlertTriangle,
-  Lightbulb,
-  LayoutDashboard,
   FileText,
-  Presentation,
-  Code2,
-  MessageCircle,
   Settings,
   Compass,
   ChevronDown,
@@ -22,21 +16,11 @@ import { useWorkspaceStore } from "../../stores/workspace";
 import { useSettingsStore } from "../../stores/settings";
 import { useWorkspaceManager } from "../../stores/workspaceManager";
 import { useNavigate } from "react-router-dom";
-import { useChatStore } from "../../stores/chat";
-import { useAuthStore } from "../../stores/auth";
-import NotificationBell from "./NotificationBell";
 
 const navItems = [
   { to: "/work", icon: FileText, label: "Work" },
   { to: "/workspace", icon: Home, label: "Workspace" },
   { to: "/evidence", icon: Database, label: "Evidence" },
-  { to: "/conflicts", icon: AlertTriangle, label: "Conflicts" },
-  { to: "/discover", icon: Lightbulb, label: "Discover" },
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/documents", icon: FileText, label: "Documents" },
-  { to: "/presentations", icon: Presentation, label: "Presentations" },
-  { to: "/prototypes", icon: Code2, label: "Prototypes" },
-  { to: "/chat", icon: MessageCircle, label: "Chat" },
 ];
 
 const statusColor: Record<string, string> = {
@@ -53,12 +37,7 @@ export default function Sidebar() {
   const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
   const tokenUsage = useSettingsStore((s) => s.tokenUsage);
   const fetchUsage = useSettingsStore((s) => s.fetchUsage);
-  const provider = useSettingsStore((s) => s.provider);
   const { workspaces, loadWorkspaces, loaded, openWorkspace } = useWorkspaceManager();
-  const clearMessages = useChatStore((s) => s.clearMessages);
-  const loadHistory = useChatStore((s) => s.loadHistory);
-  const user = useAuthStore((s) => s.user);
-  const loadProfile = useAuthStore((s) => s.loadProfile);
   const navigate = useNavigate();
   const [syncingCount, setSyncingCount] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
@@ -67,10 +46,6 @@ export default function Sidebar() {
   useEffect(() => {
     if (!loaded) loadWorkspaces();
   }, [loaded]);
-
-  useEffect(() => {
-    loadProfile();
-  }, []);
 
   // Close picker on outside click
   useEffect(() => {
@@ -155,10 +130,8 @@ export default function Sidebar() {
                     key={ws.id}
                     onClick={() => {
                       if (ws.path !== workspacePath) {
-                        clearMessages();
                         openWorkspace(ws.id);
                         switchWorkspace(ws.path, ws.name, ws.description);
-                        loadHistory(ws.path);
                       }
                       setShowPicker(false);
                     }}
@@ -213,34 +186,6 @@ export default function Sidebar() {
 
       {/* Bottom section */}
       <div className="px-2 pb-3 shrink-0">
-        {/* User profile */}
-        {user && (
-          <div className="flex items-center gap-2 px-3 py-2 mb-1">
-            {user.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={user.name}
-                className="w-6 h-6 rounded-full shrink-0"
-              />
-            ) : (
-              <div className="w-6 h-6 rounded-full bg-compass-accent/20 flex items-center justify-center shrink-0">
-                <span className="text-xs font-medium text-compass-accent">
-                  {user.name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-compass-text truncate">{user.name}</p>
-              {user.email && (
-                <p className="text-[10px] text-compass-muted truncate">{user.email}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center gap-1 px-1 mb-1">
-          <NotificationBell />
-        </div>
         <NavLink
           to="/settings"
           className={({ isActive }) =>

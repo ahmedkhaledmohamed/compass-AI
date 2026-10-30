@@ -16,11 +16,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from compass.config import (
+    CONFIG_FILE,
     ProductConfig,
     SourceConfig,
     get_compass_dir,
@@ -236,12 +238,16 @@ def init_workspace(req: InitRequest):
     base = Path(req.workspace_path)
     base.mkdir(parents=True, exist_ok=True)
     config = ProductConfig(name=req.name, description=req.description)
-    save_config(config, base)
+    config_path = get_compass_dir(base) / CONFIG_FILE
+    try:
+        with config_path.open("x", encoding="utf-8") as handle:
+            yaml.safe_dump(config.model_dump(), handle, sort_keys=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileExistsError:
+        raise HTTPException(409, "This folder already has a Compass workspace. Open it instead of creating another.") from None
 
-    from compass.git_utils import init_git_repo
-    git_created = init_git_repo(base)
-
-    return {"status": "ok", "workspace": req.workspace_path, "name": req.name, "git_initialized": git_created}
+    return {"status": "ok", "workspace": req.workspace_path, "name": req.name}
 
 
 # ---------- Git ----------

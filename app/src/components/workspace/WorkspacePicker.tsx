@@ -1,3 +1,5 @@
+import {useState} from "react";
+import {useWorkspaceStore} from "../../stores/workspace";
 import { FolderOpen, Plus, Trash2, Clock } from "lucide-react";
 import { clsx } from "clsx";
 import { useWorkspaceManager, type WorkspaceEntry } from "../../stores/workspaceManager";
@@ -8,7 +10,16 @@ interface Props {
 }
 
 export default function WorkspacePicker({ onSelect, onCreateNew }: Props) {
-  const { workspaces, removeWorkspace } = useWorkspaceManager();
+  const { workspaces, removeWorkspace,pickWorkspace,error } = useWorkspaceManager();
+
+  const [busy,setBusy]=useState(false);
+  const [pickerError,setPickerError]=useState("");
+  async function handleOpen(){
+    setBusy(true);setPickerError("");
+    try {const selected=await pickWorkspace();if(selected)useWorkspaceStore.getState().setWorkspace(selected.id,selected.name,selected.description);}
+    catch(cause){setPickerError(cause instanceof Error?cause.message:"This folder could not be opened.");}
+    finally{setBusy(false);}
+  }
 
   const sorted = [...workspaces].sort(
     (a, b) => new Date(b.last_opened).getTime() - new Date(a.last_opened).getTime()
@@ -43,7 +54,7 @@ export default function WorkspacePicker({ onSelect, onCreateNew }: Props) {
                   </div>
                 </button>
                 <button
-                  onClick={() => removeWorkspace(ws.id)}
+                  onClick={async () => {try {await removeWorkspace(ws.id);if(useWorkspaceStore.getState().workspacePath===ws.id)useWorkspaceStore.getState().clearWorkspace();}catch{setPickerError("This workspace registration could not be removed.");}}}
                   className="opacity-0 group-hover:opacity-100 text-compass-muted hover:text-red-400 transition-all"
                   title="Remove"
                 >
@@ -54,6 +65,8 @@ export default function WorkspacePicker({ onSelect, onCreateNew }: Props) {
           </div>
         )}
 
+        {(error||pickerError) && <p role="alert" className="text-red-400 text-sm my-3">{pickerError||error}</p>}
+        <button disabled={busy} onClick={handleOpen} className="w-full border border-compass-border rounded-xl px-4 py-3 mb-3 disabled:opacity-50">{busy?"Opening…":"Open existing workspace"}</button>
         <button
           onClick={onCreateNew}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-compass-border text-sm text-compass-muted hover:text-compass-text hover:border-compass-accent/30 transition-colors"

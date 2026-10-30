@@ -16,6 +16,7 @@ interface WorkspaceState {
   evidenceCount: number;
   evidenceSummary: Record<string, number>;
   ingestionResults: IngestionResult[];
+  ingestionError:string;
   engineStatus: "connecting" | "ready" | "unavailable";
   isIngesting: boolean;
   isReconciling: boolean;
@@ -42,6 +43,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   evidenceCount: 0,
   evidenceSummary: {},
   ingestionResults: [],
+  ingestionError:"",
   engineStatus: "connecting",
   isIngesting: false,
   isReconciling: false,
@@ -59,6 +61,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       evidenceCount: 0,
       evidenceSummary: {},
       ingestionResults: [],
+      ingestionError:"",
     }),
 
   setSources: (sources) => set({ sources }),
@@ -83,6 +86,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       evidenceCount: 0,
       evidenceSummary: {},
       ingestionResults: [],
+      ingestionError:"",
       isIngesting: false,
     });
 
@@ -107,10 +111,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
         });
         if (info.evidence_count > 0) {
           set({ evidenceCount: info.evidence_count });
-        } else if (info.sources.length > 0) {
-          // Auto-ingest if sources exist but no evidence
-          const { triggerIngestion } = useWorkspaceStore.getState();
-          triggerIngestion(path);
         }
       }
     } catch (err) {
@@ -119,12 +119,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   },
 
   triggerIngestion: async (workspacePath: string) => {
-    set({ isIngesting: true });
+    set({ isIngesting: true,ingestionError:"" });
     try {
       const res = (await window.compass.engine.call("/ingest", {
         workspace_path: workspacePath,
       })) as {
         status: string;
+        message?:string;
         total: number;
         sources: { name: string; type: string; items: number; error?: string }[];
         summary: Record<string, number>;
@@ -135,9 +136,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           evidenceCount: res.total,
           evidenceSummary: res.summary,
         });
+      } else {
+        set({ingestionError:res.message||"Import did not complete for every source. Previous evidence was kept for failed sources.",ingestionResults:res.sources||[]});
       }
     } catch (err) {
-      console.error("Auto-ingest failed:", err);
+      set({ingestionError:err instanceof Error?err.message:"Import failed. Your previous evidence was kept."});
     } finally {
       set({ isIngesting: false });
     }

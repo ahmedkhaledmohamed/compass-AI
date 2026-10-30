@@ -58,10 +58,6 @@ export default function WorkspacePage() {
               options: {},
             }))
           );
-          // If sources exist but no evidence, auto-ingest
-          if (info.sources.length > 0 && info.evidence_count === 0 && !store.isIngesting) {
-            store.triggerIngestion(workspacePath);
-          }
           // If evidence exists, update the count
           if (info.evidence_count > 0) {
             store.setIngestionResults([], info.evidence_count, {});
@@ -76,8 +72,8 @@ export default function WorkspacePage() {
   if (!workspacePath) {
     return (
       <WorkspacePicker
-        onSelect={(ws) => {
-          openWorkspace(ws.id);
+        onSelect={async (ws) => {
+          try {await openWorkspace(ws.id);} catch {return;}
           setWorkspace(ws.path, ws.name, ws.description);
         }}
         onCreateNew={() => navigate("/onboarding")}

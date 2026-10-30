@@ -31,6 +31,7 @@ export default function OnboardingPage() {
   const [productName, setProductName] = useState("");
   const [productDesc, setProductDesc] = useState("");
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [workspaceLabel,setWorkspaceLabel]=useState("");
   const [error, setError] = useState("");
 
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
@@ -40,11 +41,18 @@ export default function OnboardingPage() {
   const stepIndex = ["welcome", "setup"].indexOf(step);
   const totalSteps = 2;
 
+  async function handleOpenExisting(){
+    setError("");
+    try {const selected=await useWorkspaceManager.getState().pickWorkspace();if(!selected)return;
+      setWorkspace(selected.id,selected.name,selected.description);completeOnboarding();navigate("/workspace",{replace:true});
+    }catch(cause){setError(cause instanceof Error?cause.message:"This workspace could not be opened.");}
+  }
+
   async function handlePickFolder() {
     setError("");
     try {
-      const selected = await window.compass.app.selectDirectory();
-      if (selected) setWorkspacePath(selected);
+      const selected = await window.compass.workspaces.choose("workspace","directory");
+      if (selected) {setWorkspacePath(selected.id);setWorkspaceLabel(selected.label);}
     } catch {setError("The folder picker could not be opened. Try again.");}
   }
 
@@ -52,12 +60,9 @@ export default function OnboardingPage() {
     if (!workspacePath || !productName.trim()) return;
     setError(""); setStep("launching");
     try {
-      const result = await window.compass.engine.call("/init", {
-        workspace_path: workspacePath, name: productName.trim(), description: productDesc.trim(),
-      }) as {status:string; message?:string};
-      if (result.status !== "ok") throw new Error(result.message || "Workspace could not be created. Try another folder.");
-      await addWorkspaceEntry({name:productName.trim(),description:productDesc.trim(),path:workspacePath});
-      setWorkspace(workspacePath,productName.trim(),productDesc.trim());
+      const result=await window.compass.workspaces.create(workspacePath,productName.trim(),productDesc.trim());
+      await addWorkspaceEntry({name:result.name,description:result.description,path:result.id});
+      setWorkspace(result.id,result.name,result.description);
       completeOnboarding(); navigate("/workspace",{replace:true});
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Workspace could not be created. Try again."); setStep("setup");
@@ -102,6 +107,8 @@ export default function OnboardingPage() {
               Get Started
               <ArrowRight className="w-4 h-4" />
             </button>
+            <button onClick={handleOpenExisting} className="block mx-auto mt-4 text-sm text-compass-accent underline">Open existing workspace</button>
+            {error && <p role="alert" className="mt-4 text-red-400 text-sm">{error}</p>}
           </div>
         )}
 
@@ -151,7 +158,7 @@ export default function OnboardingPage() {
                 >
                   <FolderOpen className="w-4 h-4 text-compass-muted" />
                   <span className={workspacePath ? "text-compass-text" : "text-neutral-600"}>
-                    {workspacePath || "Select a folder..."}
+                    {workspaceLabel || "Select a folder..."}
                   </span>
                 </button>
               </div>

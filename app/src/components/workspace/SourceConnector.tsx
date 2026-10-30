@@ -69,44 +69,41 @@ export default function SourceConnector() {
   const workspacePath = useWorkspaceStore((s) => s.workspacePath);
   const sources = useWorkspaceStore((s) => s.sources);
   const addSource = useWorkspaceStore((s) => s.addSource);
+  const [error,setError]=useState("");
   const [connecting, setConnecting] = useState<string | null>(null);
 
   const connectedTypes = new Set(sources.map((s) => s.type));
 
   async function handleConnect(def: SourceDef) {
     if (!workspacePath) return;
-    setConnecting(def.type);
+    setConnecting(def.type);setError("");
 
     try {
-      const path =
-        def.picker === "directory"
-          ? await window.compass.app.selectDirectory()
-          : await window.compass.app.selectFile();
-
-      if (!path) {
-        setConnecting(null);
-        return;
-      }
+      const selected=await window.compass.workspaces.choose("source",def.picker);
+      if(!selected)return;
 
       const res = (await window.compass.engine.call("/connect", {
         workspace_path: workspacePath,
         source_type: def.type,
         name: def.label,
-        path,
-      })) as { status: string; accessible: boolean };
+        path:selected.id,
+      })) as { status: string; accessible: boolean; message?:string };
 
+      if(res.status!=="ok" || res.accessible!==true)throw new Error(res.message||"That source could not be connected. Select a readable local file or folder.");
       if (res.status === "ok") {
-        addSource({ type: def.type, name: def.label, path, url: null, options: {} });
+        addSource({ type: def.type, name: def.label, path: null, url: null, options: {} });
       }
     } catch (err) {
-      console.error("Connect failed:", err);
+      setError(err instanceof Error?err.message:"The selected source could not be connected. Try again.");
     } finally {
       setConnecting(null);
     }
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div>
+      {error && <p role="alert" className="text-red-400 text-sm mb-3">{error}</p>}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {SOURCE_DEFS.map((def) => {
         const Icon = def.icon;
         const connected = connectedTypes.has(def.type);
@@ -154,6 +151,7 @@ export default function SourceConnector() {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

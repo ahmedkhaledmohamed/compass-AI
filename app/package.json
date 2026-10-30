@@ -15,7 +15,8 @@
     "test:connections": "tsc -p tsconfig.electron.json && node --test tests/ai-connections.test.cjs",
     "test:secrets": "tsc -p tsconfig.electron.json && node --test tests/secret-storage.test.cjs",
     "test:engine-auth": "tsc -p tsconfig.electron.json && node --test tests/engine-auth.test.cjs",
-    "test:ipc": "tsc -p tsconfig.electron.json && node --test tests/ipc.test.cjs"
+    "test:ipc": "tsc -p tsconfig.electron.json && node --test tests/ipc.test.cjs",
+    "test:workspaces": "tsc -p tsconfig.electron.json && node --test tests/workspace-access.test.cjs"
   },
   "dependencies": {
     "@tiptap/extension-code-block-lowlight": "^3.20.1",

@@ -8,6 +8,7 @@ export default function IngestButton() {
   const isIngesting = useWorkspaceStore((s) => s.isIngesting);
   const triggerIngestion = useWorkspaceStore((s) => s.triggerIngestion);
   const evidenceCount = useWorkspaceStore((s) => s.evidenceCount);
+  const ingestionError=useWorkspaceStore(s=>s.ingestionError);
   const ingestionResults = useWorkspaceStore((s) => s.ingestionResults);
 
   function handleIngest() {
@@ -19,6 +20,7 @@ export default function IngestButton() {
 
   return (
     <div className="space-y-3">
+      {ingestionError && <p role="alert" className="text-red-400 text-sm">{ingestionError}</p>}
       <button
         onClick={handleIngest}
         disabled={isIngesting || sources.length === 0}

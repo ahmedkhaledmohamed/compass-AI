@@ -115,10 +115,10 @@ test("generated prototype scripts cannot share the privileged renderer origin", 
 
 const {requireReleaseEndpoint} = require("../dist-electron/release-policy.js");
 test("desktop engine boundary blocks deferred and encoded capabilities", () => {
-  for (const endpoint of ["/git/push","/chat","/chat/stream","/prototype/generate","/presentation/generate","/dashboard/generate","/configure","/credentials/inject","/documents/save","/documents/delete","/templates/init","/tasks/jobs/start?x=1","/%74asks/jobs/start","/tasks/jobs/start/","https://untrusted.example/tasks/list"]) {
+  for (const endpoint of ["/git/push","/chat","/chat/stream","/prototype/generate","/presentation/generate","/dashboard/generate","/configure","/credentials/inject","/documents/save","/documents/delete","/templates/init","/init","/tasks/jobs/start?x=1","/%74asks/jobs/start","/tasks/jobs/start/","https://untrusted.example/tasks/list"]) {
     assert.throws(()=>requireReleaseEndpoint(endpoint),/not available/);
   }
-  for (const endpoint of ["/tasks/jobs/start","/tasks/revise","/tasks/review","/documents/list","/documents/get","/workspace/info","/init","/evidence","/connect","/ingest"])assert.doesNotThrow(()=>requireReleaseEndpoint(endpoint));
+  for (const endpoint of ["/tasks/jobs/start","/tasks/revise","/tasks/review","/documents/list","/documents/get","/workspace/info","/evidence","/connect","/ingest"])assert.doesNotThrow(()=>requireReleaseEndpoint(endpoint));
 });
 
 test("release preload exposes task and native AI capabilities without legacy privileged bridges", () => {
@@ -126,8 +126,10 @@ test("release preload exposes task and native AI capabilities without legacy pri
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,"../dist-electron/preload.js"),"utf8"),{
     require:()=>({contextBridge:{exposeInMainWorld:(_name,value)=>{api=value;}},ipcRenderer:{invoke:()=>{},on:()=>{},removeListener:()=>{}}}),exports:{},
   });
-  assert.deepEqual(Object.keys(api).sort(),["ai","app","engine"]);
+  assert.deepEqual(Object.keys(api).sort(),["ai","app","engine","workspaces"]);
   assert.equal(api.engine.stream,undefined);
+  assert.equal(api.app.selectDirectory,undefined);
+  assert.equal(api.app.selectFile,undefined);
   assert.equal(api.app.captureHtmlPng,undefined);
   assert.equal(api.app.exportDocument,undefined);
   assert.equal(typeof api.app.saveFile,"function");

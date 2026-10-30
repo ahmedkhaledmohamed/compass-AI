@@ -13,84 +13,44 @@ interface WorkspaceManagerState {
   workspaces: WorkspaceEntry[];
   activeWorkspaceId: string | null;
   loaded: boolean;
+  error:string;
 
   loadWorkspaces: () => Promise<void>;
   saveWorkspaces: () => Promise<void>;
   addWorkspace: (entry: Omit<WorkspaceEntry, "id" | "created_at" | "last_opened">) => Promise<WorkspaceEntry>;
   removeWorkspace: (id: string) => Promise<void>;
-  openWorkspace: (id: string) => void;
+  openWorkspace: (id: string) => Promise<void>;
+  pickWorkspace:()=>Promise<WorkspaceEntry|null>;
   getActiveWorkspace: () => WorkspaceEntry | null;
 }
 
-function generateId() {
-  return `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-const STORAGE_KEY = "compass-workspaces";
-const ACTIVE_KEY = "compass-active-workspace";
-
-export const useWorkspaceManager = create<WorkspaceManagerState>((set, get) => ({
-  workspaces: [],
-  activeWorkspaceId: null,
-  loaded: false,
-
-  loadWorkspaces: async () => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const workspaces: WorkspaceEntry[] = raw ? JSON.parse(raw) : [];
-      const activeWorkspaceId = localStorage.getItem(ACTIVE_KEY) || null;
-      set({ workspaces, activeWorkspaceId, loaded: true });
-    } catch {
-      set({ workspaces: [], loaded: true });
-    }
+// Native registrations are authoritative. Legacy localStorage is preserved,
+// but its paths never grant filesystem access.
+export const useWorkspaceManager = create<WorkspaceManagerState>((set,get)=>({
+  workspaces:[],activeWorkspaceId:null,loaded:false,error:"",
+  loadWorkspaces:async()=>{
+    try {const data=await window.compass.workspaces.list();set({...data,loaded:true,error:""});}
+    catch {set({loaded:true,error:"Saved workspace registrations could not be read. Restore the registry or reopen Compass; your files have been kept."});}
   },
-
-  saveWorkspaces: async () => {
-    const { workspaces, activeWorkspaceId } = get();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces));
-    if (activeWorkspaceId) {
-      localStorage.setItem(ACTIVE_KEY, activeWorkspaceId);
-    }
+  saveWorkspaces:async()=>{await get().loadWorkspaces();},
+  addWorkspace:async entry=>{
+    await get().loadWorkspaces();
+    if(get().error)throw new Error(get().error);
+    const registered=get().workspaces.find(item=>item.id===entry.path);
+    if(!registered)throw new Error("Create or open this workspace through the native folder picker.");
+    return registered;
   },
-
-  addWorkspace: async (entry) => {
-    const ws: WorkspaceEntry = {
-      ...entry,
-      id: generateId(),
-      created_at: new Date().toISOString(),
-      last_opened: new Date().toISOString(),
-    };
-    set((s) => {
-      const workspaces = [...s.workspaces, ws];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces));
-      localStorage.setItem(ACTIVE_KEY, ws.id);
-      return { workspaces, activeWorkspaceId: ws.id };
-    });
-    return ws;
+  removeWorkspace:async id=>{
+    const result=await window.compass.workspaces.forget(id);set({...result,loaded:true});
   },
-
-  removeWorkspace: async (id) => {
-    set((s) => {
-      const workspaces = s.workspaces.filter((w) => w.id !== id);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces));
-      const activeWorkspaceId = s.activeWorkspaceId === id ? null : s.activeWorkspaceId;
-      return { workspaces, activeWorkspaceId };
-    });
+  openWorkspace:async id=>{
+    try {await window.compass.workspaces.activate(id);await get().loadWorkspaces();}
+    catch(cause){set({error:cause instanceof Error?cause.message:"This workspace could not be opened."});throw cause;}
   },
-
-  openWorkspace: (id) => {
-    set((s) => {
-      const workspaces = s.workspaces.map((w) =>
-        w.id === id ? { ...w, last_opened: new Date().toISOString() } : w
-      );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces));
-      localStorage.setItem(ACTIVE_KEY, id);
-      return { workspaces, activeWorkspaceId: id };
-    });
+  pickWorkspace:async()=>{
+    const selected=await window.compass.workspaces.open();
+    if(selected)await get().loadWorkspaces();
+    return selected;
   },
-
-  getActiveWorkspace: () => {
-    const { workspaces, activeWorkspaceId } = get();
-    return workspaces.find((w) => w.id === activeWorkspaceId) || null;
-  },
+  getActiveWorkspace:()=>get().workspaces.find(item=>item.id===get().activeWorkspaceId)||null,
 }));

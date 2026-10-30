@@ -22,10 +22,12 @@ if (fs.existsSync(envPath)) {
 import { startEngine, stopEngine, engineFetch } from "./engine-bridge";
 import { handleMainIPC, trustMainWindow } from "./ipc";
 import { requireReleaseEndpoint } from "./release-policy";
+import { WorkspaceAccess } from "./workspace-access";
 import { AIVault } from "./ai-vault";
 import { AIConnections, engineOperation } from "./ai-connections";
 
 let aiConnections: AIConnections | undefined;
+let workspaceAccess: WorkspaceAccess | undefined;
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
 
@@ -71,6 +73,10 @@ app.whenReady().then(async () => {
     encrypt:value => safeStorage.encryptString(value),
     decrypt:value => safeStorage.decryptString(value),
   }), url => shell.openExternal(url), (endpoint,body) => engineFetch(endpoint,body ? {body} : undefined), undefined, process.env.COMPASS_HF_CLIENT_ID || "");
+  workspaceAccess = new WorkspaceAccess(path.join(app.getPath("userData"),"workspaces.json"),async kind=>{
+    const result=await dialog.showOpenDialog({properties:kind==="directory"?["openDirectory"]:["openFile"]});
+    return result.canceled?null:result.filePaths[0];
+  },(endpoint,body)=>engineFetch(endpoint,body?{body}:undefined));
   createWindow();
 
   try {
@@ -111,23 +117,6 @@ app.on("activate", () => {
   }
 });
 
-// IPC: Native folder picker
-handleMainIPC("select-directory", async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ["openDirectory"],
-  });
-  return result.canceled ? null : result.filePaths[0];
-});
-
-// IPC: Native file picker
-handleMainIPC("select-file", async (_event, filters) => {
-  const result = await dialog.showOpenDialog({
-    properties: ["openFile"],
-    filters: filters || [],
-  });
-  return result.canceled ? null : result.filePaths[0];
-});
-
 // IPC: Save file dialog
 handleMainIPC("save-file", async (_event, defaultName: string, content: string) => {
   const result = await dialog.showSaveDialog({
@@ -146,8 +135,10 @@ handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) =>
     requireReleaseEndpoint(endpoint);
     const operation=engineOperation(endpoint);
     if(operation === "native-only" && aiConnections) return {status:"error",message:"Use AI connections to change this provider or model."};
-    if(operation === "generation" && aiConnections) return await aiConnections.runGeneration(endpoint,body);
-    return await engineFetch(endpoint, body ? { body } : undefined);
+    return await nativeWorkspaces().request(endpoint,body,(target,request)=>{
+      if(operation === "generation" && aiConnections)return aiConnections.runGeneration(target,request);
+      return engineFetch(target,request?{body:request}:undefined);
+    });
   } catch (err) {
     return { status: "error", message: String(err) };
   }
@@ -339,3 +330,14 @@ handleMainIPC("ai-import-saved-claude", async () => {
   if(!key) throw new Error("No saved Claude key is available. Connect with your current API key.");
   return nativeAI().saveKey("anthropic",key);
 });
+
+function nativeWorkspaces():WorkspaceAccess {
+  if(!workspaceAccess)throw new Error("Workspace access is still starting.");
+  return workspaceAccess;
+}
+handleMainIPC("workspaces-list",()=>nativeWorkspaces().list());
+handleMainIPC("workspaces-choose",(_event,purpose,kind)=>nativeWorkspaces().choose(purpose,kind));
+handleMainIPC("workspaces-create",(_event,selection,name,description)=>nativeWorkspaces().create(selection,name,description));
+handleMainIPC("workspaces-open",()=>nativeWorkspaces().open());
+handleMainIPC("workspaces-activate",(_event,id)=>nativeWorkspaces().activate(id));
+handleMainIPC("workspaces-forget",(_event,id)=>nativeWorkspaces().forget(id));

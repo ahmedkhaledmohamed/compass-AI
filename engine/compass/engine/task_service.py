@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from compass.engine.evidence_repository import EvidenceRepository
 from compass.engine.orchestrator import get_orchestrator
@@ -27,6 +28,10 @@ Return only the requested JSON schema. Do not emit review states or decisions.
 
 def source_key(item: Evidence) -> str:
     return item.source_name or f"legacy:{item.connector}"
+
+
+class ContextBudgetExceeded(ValueError):
+    """The selected task context exceeds the explicit workflow budget."""
 
 
 class TaskService:
@@ -91,11 +96,29 @@ class TaskService:
             raise ValueError("Generate an artifact before reviewing it")
         return artifact
 
+    def prepare_generation(self, task: Task, kind: ArtifactKind):
+        self._fresh(task)
+        if kind == "handoff":
+            brief = self._artifact(task, "brief")
+            if brief.state != "accepted" or not brief.decision:
+                raise ValueError("Accept a reviewed brief and choose a direction before drafting a handoff")
+
+    def start_job(self, task_id, expected_revision, kind, request_id, timeout_seconds=120):
+        from compass.engine.task_jobs import get_job_manager
+        return get_job_manager().start(self, task_id, expected_revision, kind,
+                                       request_id, get_orchestrator(), timeout_seconds)
+
     def generate(self, task_id: str, expected_revision: int, kind: ArtifactKind) -> Task:
+        from compass.engine.task_jobs import get_job_manager
+        manager = get_job_manager()
+        job = self.start_job(task_id, expected_revision, kind, uuid4().hex)
+        return manager.wait(self, task_id, job["id"])
+
+    def _generate(self, task_id, expected_revision, kind, orchestrator, job) -> Task:
         task = self.tasks.read(task_id)
         if task.revision != expected_revision:
             raise TaskConflict("Task changed. Reload before generating.")
-        self._fresh(task)
+        self.prepare_generation(task, kind)
         accepted_brief = None
         if kind == "handoff":
             brief = self._artifact(task, "brief")
@@ -119,14 +142,15 @@ class TaskService:
         }
         context = json.dumps(data, ensure_ascii=False)
         if len(context) > MAX_CONTEXT_CHARS:
-            raise ValueError("Selected evidence exceeds this workflow's 60,000-character context limit. Select fewer sources; nothing has been silently omitted.")
-        orchestrator = get_orchestrator()
+            raise ContextBudgetExceeded("Selected evidence exceeds this workflow's 60,000-character context limit. Select fewer sources; nothing has been silently omitted.")
         prompt = ("Draft a decision brief with alternatives, unknowns and a proposed action. "
                   if kind == "brief" else
                   "Draft a specification handoff for the human's chosen direction. Put proposed requirements and acceptance criteria in proposal claims; mark unverified implementation details as unknown. ")
         prompt += "\nOutput schema:\n" + json.dumps(DraftBody.model_json_schema())
         prompt += "\nTask and evidence data:\n" + context
+        job.stage("generating")
         raw = orchestrator.ask_json(prompt, system=SYSTEM, model=orchestrator.default_model, max_tokens=8000)
+        job.stage("validating_output")
         body = DraftBody.model_validate(raw)
         self.validate_body(task, body)
         artifact = Artifact(
@@ -141,7 +165,8 @@ class TaskService:
                 current.handoff = None
 
         # A late model response can never overwrite intervening user edits.
-        return self.tasks.update(task_id, expected_revision, save)
+        job.stage("committing")
+        return self.tasks.update(task_id, expected_revision, save, job_id=job.id)
 
     def revise(self, task_id: str, expected_revision: int, kind: ArtifactKind, body: DraftBody) -> Task:
         def change(task: Task):

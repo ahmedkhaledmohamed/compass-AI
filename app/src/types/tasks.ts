@@ -41,3 +41,15 @@ export interface TaskSummary {
   brief_state: string | null;
   handoff_state: string | null;
 }
+export interface GenerationJob {
+  id: string;
+  task_id: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted";
+  stage: string;
+  model: string;
+  provider: string;
+  result_revision: number | null;
+  error_code: string | null;
+  message: string | null;
+  draining: boolean;
+}

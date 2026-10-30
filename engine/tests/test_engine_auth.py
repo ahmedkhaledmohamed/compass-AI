@@ -56,3 +56,11 @@ def test_previous_session_token_is_rejected_after_rotation(client, monkeypatch):
     monkeypatch.setattr(server, "_engine_token", "next-fictional-session")
     assert client.get("/health", headers={"Authorization": "Bearer fictional-engine-session"}).status_code == 401
     assert client.get("/health", headers={"Authorization": "Bearer next-fictional-session"}).status_code == 200
+
+
+@pytest.mark.parametrize("endpoint", ["/tasks/list", "/tasks/create", "/tasks/jobs/start", "/tasks/jobs/cancel"])
+def test_unauthorized_task_operations_do_not_create_workspace_state(client, tmp_path, endpoint):
+    workspace = tmp_path / "must-remain-absent"
+    result = client.post(endpoint, json={"workspace_path": str(workspace)})
+    assert result.status_code == 401
+    assert not workspace.exists()

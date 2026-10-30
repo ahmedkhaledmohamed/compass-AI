@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
+import WorkPage from "./pages/WorkPage";
 import WorkspacePage from "./pages/WorkspacePage";
 import EvidencePage from "./pages/EvidencePage";
 import ConflictsPage from "./pages/ConflictsPage";
@@ -94,6 +95,7 @@ function AppWithStartup() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<Navigate to={needsOnboarding ? "/onboarding" : "/workspace"} replace />} />
+        <Route path="/work/:taskId?" element={<WorkPage />} />
         <Route path="/workspace" element={<WorkspacePage />} />
         <Route path="/evidence" element={<EvidencePage />} />
         <Route path="/conflicts" element={<ConflictsPage />} />

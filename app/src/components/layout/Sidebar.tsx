@@ -27,6 +27,7 @@ import { useAuthStore } from "../../stores/auth";
 import NotificationBell from "./NotificationBell";
 
 const navItems = [
+  { to: "/work", icon: FileText, label: "Work" },
   { to: "/workspace", icon: Home, label: "Workspace" },
   { to: "/evidence", icon: Database, label: "Evidence" },
   { to: "/conflicts", icon: AlertTriangle, label: "Conflicts" },

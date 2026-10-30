@@ -20,6 +20,8 @@ export interface Evidence {
   content: string;
   metadata: Record<string, unknown>;
   timestamp: string;
+  source_name?: string;
+  ingested_at?: string;
 }
 
 export type ConflictSeverity = "high" | "medium" | "low";

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from compass.engine.source_import import import_source
+
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
@@ -131,32 +133,26 @@ def compass_ingest() -> str:
         return "No sources connected. Run `compass connect` first."
 
     from compass.config import get_compass_dir
-    from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     compass_dir = get_compass_dir(workspace)
     kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
-    kg.clear()
 
+    failed = False
     results = []
     total = 0
-    now = datetime.now()
     for source in config.sources:
         try:
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            evidence = import_source(kg, source)
             total += len(evidence)
             results.append(f"- {source.name}: {len(evidence)} items")
         except Exception as e:
+            failed = True
             logger.debug("Source ingestion failed; retaining results from other sources.", exc_info=True)
             results.append(f"- {source.name}: ERROR — {e}")
 
-    return f"# Ingestion Complete\n\n**{total} evidence items** from {len(config.sources)} sources:\n\n" + "\n".join(results)
+    heading = "Ingestion with errors" if failed else "Ingestion Complete"
+    return f"# {heading}\n\n**{total} evidence items** from {len(config.sources)} sources:\n\n" + "\n".join(results)
 
 
 @mcp.tool()
@@ -426,7 +422,6 @@ def compass_refresh(source_name: str = "") -> str:
         return "No sources connected."
 
     from compass.config import get_compass_dir
-    from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     compass_dir = get_compass_dir(workspace)
@@ -439,27 +434,21 @@ def compass_refresh(source_name: str = "") -> str:
             available = ", ".join(s.name for s in config.sources)
             return f"Source '{source_name}' not found. Available: {available}"
 
+    failed = False
     results = []
-    now = datetime.now()
     for source in sources:
         try:
-            removed = kg.remove_by_connector(source.name)
-            if removed == 0:
-                removed = kg.remove_by_connector(source.type)
+            removed = sum(item.source_name == source.name for item in kg.store.items)
 
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            evidence = import_source(kg, source)
             results.append(f"- {source.name}: removed {removed}, added {len(evidence)}")
         except Exception as e:
+            failed = True
             logger.debug("Source refresh failed; retaining results from other sources.", exc_info=True)
             results.append(f"- {source.name}: ERROR — {e}")
 
-    return f"# Refresh Complete\n\n**Total evidence:** {len(kg)} items\n\n" + "\n".join(results)
+    heading = "Refresh with errors" if failed else "Refresh Complete"
+    return f"# {heading}\n\n**Total evidence:** {len(kg)} items\n\n" + "\n".join(results)
 
 
 @mcp.tool()

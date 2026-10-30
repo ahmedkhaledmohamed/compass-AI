@@ -64,7 +64,7 @@ class DocsConnector(Connector):
 
     def _ingest_file(self, fpath: Path) -> Evidence | None:
         try:
-            content = fpath.read_text(errors="ignore")
+            content = fpath.read_text()
             if not content.strip():
                 return None
             if len(content) > MAX_DOC_SIZE:
@@ -80,7 +80,7 @@ class DocsConnector(Connector):
             )
         except Exception as e:
             logger.warning("Failed to ingest doc %s: %s", fpath, e, exc_info=True)
-            return None
+            raise ValueError(f"Could not read document: {fpath.name}") from e
 
     def _extract_title(self, content: str, fpath: Path) -> str:
         for line in content.split("\n")[:5]:

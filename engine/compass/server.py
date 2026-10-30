@@ -33,6 +33,7 @@ from compass.engine.discoverer import Discoverer
 from compass.engine.knowledge_graph import KnowledgeGraph
 from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
 from compass.engine.reconciler import Reconciler
+from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
 
 logger = logging.getLogger(__name__)
@@ -311,18 +312,15 @@ def ingest(req: WorkspaceRequest):
         raise HTTPException(400, "No sources connected")
 
     compass_dir = get_compass_dir(base)
-    _kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
+    kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
+    _kg = kg
     _kg_workspace_path = req.workspace_path
-    _kg.clear()
 
     results = []
     total = 0
     for source in config.sources:
         try:
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            _kg.add_many(evidence)
+            evidence = import_source(kg, source)
             count = len(evidence)
             total += count
             results.append({"name": source.name, "type": source.type, "items": count})
@@ -330,13 +328,13 @@ def ingest(req: WorkspaceRequest):
             logger.debug("Source ingestion failed; returning the existing per-source error.", exc_info=True)
             results.append({"name": source.name, "type": source.type, "items": 0, "error": str(e)})
 
-    summary = _kg.store.summary
+    summary = kg.store.summary
 
     from compass import activity as act
     act.record(req.workspace_path, "ingest", f"Ingested {total} evidence items",
                metadata={"total": total, "sources": len(results)})
 
-    return {"status": "ok", "total": total, "sources": results, "summary": summary}
+    return {"status": import_status(results), "total": total, "sources": results, "summary": summary}
 
 
 # ---------- Refresh ----------
@@ -349,15 +347,13 @@ class RefreshRequest(BaseModel):
 @app.post("/refresh")
 def refresh(req: RefreshRequest):
     global _kg, _kg_workspace_path
-    from datetime import datetime
-
     base = Path(req.workspace_path)
     config = load_config(base)
     compass_dir = get_compass_dir(base)
 
-    if not _kg or _kg_workspace_path != req.workspace_path:
-        _kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
-        _kg_workspace_path = req.workspace_path
+    kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
+    _kg = kg
+    _kg_workspace_path = req.workspace_path
 
     sources_to_refresh = config.sources
     if req.source_name:
@@ -368,24 +364,14 @@ def refresh(req: RefreshRequest):
     results = []
     for source in sources_to_refresh:
         try:
-            removed = _kg.remove_by_connector(source.name)
-            if removed == 0:
-                removed = _kg.remove_by_connector(source.type)
-
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            now = datetime.now()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            _kg.add_many(evidence)
+            removed = sum(item.source_name == source.name for item in kg.store.items)
+            evidence = import_source(kg, source)
             results.append({"name": source.name, "removed": removed, "added": len(evidence)})
         except Exception as e:
-            logger.debug("Source refresh failed; returning the existing per-source error.", exc_info=True)
+            logger.debug("Source refresh failed; previous evidence retained.", exc_info=True)
             results.append({"name": source.name, "removed": 0, "added": 0, "error": str(e)})
 
-    return {"status": "ok", "total": len(_kg), "sources": results}
+    return {"status": import_status(results), "total": len(kg), "sources": results}
 
 
 # ---------- Evidence ----------

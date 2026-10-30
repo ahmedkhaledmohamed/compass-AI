@@ -32,6 +32,7 @@ from compass.config import (
     load_config,
     save_config,
 )
+from compass.engine.source_import import import_source
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +129,10 @@ def ingest():
         console.print("[yellow]No sources connected. Run 'compass connect' first.[/yellow]")
         raise typer.Exit(1)
 
-    from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     compass_dir = get_compass_dir()
     kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
-
-    # Clear previous ingestion
-    kg.clear()
 
     total = 0
     table = Table(title="Ingestion Results")
@@ -143,30 +140,26 @@ def ingest():
     table.add_column("Type")
     table.add_column("Items", justify="right")
 
-    from datetime import datetime
-
     from compass.models.sources import CONNECTOR_SOURCE_MAP
 
+    failed = False
     for source in config.sources:
         try:
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            now = datetime.now()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            evidence = import_source(kg, source)
             count = len(evidence)
             total += count
             source_type = CONNECTOR_SOURCE_MAP.get(source.type, source.type)
             type_str = _source_badge(source_type.value if hasattr(source_type, 'value') else source_type)
             table.add_row(source.name, type_str, str(count))
         except Exception as e:
+            failed = True
             logger.debug("Source ingestion failed; retaining results from other sources.", exc_info=True)
             table.add_row(source.name, source.type, f"[red]Error: {e}[/red]")
 
     console.print(table)
+    if failed:
+        console.print("[red]Ingestion has errors; failed sources retained their previous evidence.[/red]")
+        raise typer.Exit(1)
     console.print(f"\n[bold green]Ingested {total} evidence items from {len(config.sources)} sources[/bold green]")
 
     # Save summary
@@ -383,9 +376,6 @@ def refresh(
         console.print("[yellow]No sources connected. Run 'compass connect' first.[/yellow]")
         raise typer.Exit(1)
 
-    from datetime import datetime
-
-    from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     compass_dir = get_compass_dir()
@@ -403,29 +393,21 @@ def refresh(
     table.add_column("Removed", justify="right")
     table.add_column("Added", justify="right")
 
+    failed = False
     for source in sources_to_refresh:
         try:
-            # Remove old evidence from this source
-            removed = kg.remove_by_connector(source.name)
-            if removed == 0:
-                # Try connector type as fallback
-                removed = kg.remove_by_connector(source.type)
-
-            # Re-ingest
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            now = datetime.now()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            removed = sum(item.source_name == source.name for item in kg.store.items)
+            evidence = import_source(kg, source)
             table.add_row(source.name, str(removed), str(len(evidence)))
         except Exception as e:
+            failed = True
             logger.debug("Source refresh failed; retaining results from other sources.", exc_info=True)
             table.add_row(source.name, "?", f"[red]Error: {e}[/red]")
 
     console.print(table)
+    if failed:
+        console.print("[red]Refresh has errors; failed sources retained their previous evidence.[/red]")
+        raise typer.Exit(1)
     console.print(f"\n[bold green]Refresh complete. Total evidence: {len(kg)}[/bold green]")
 
 
@@ -1360,7 +1342,6 @@ def write_update(
 @app.command()
 def quickstart():
     """Interactive setup: init workspace, connect sources, ingest, discover — in 5 minutes."""
-    from datetime import datetime
 
     console.print(Panel(
         "[bold]Compass Quickstart[/bold]\n\n"
@@ -1421,32 +1402,28 @@ def quickstart():
 
     # Step 4: Ingest
     console.print(f"\n[bold]Ingesting evidence from {connected} sources...[/bold]")
-    from compass.connectors import get_connector
     from compass.engine.knowledge_graph import KnowledgeGraph
 
     kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
-    kg.clear()
 
     config = load_config(workspace_dir)
-    now = datetime.now()
     total = 0
+    failed = False
     for source in config.sources:
         try:
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            evidence = import_source(kg, source)
             console.print(f"  [green]✓[/green] {source.name}: {len(evidence)} items")
             total += len(evidence)
         except Exception as e:
+            failed = True
             logger.debug("Quickstart operation failed; keeping the existing error response.", exc_info=True)
             console.print(f"  [red]✗[/red] {source.name}: {e}")
 
     console.print(f"\n[bold]{total} evidence items[/bold] ingested.")
 
+    if failed:
+        console.print("[red]Ingestion has errors. Resolve them before discovery.[/red]")
+        raise typer.Exit(1)
     # Step 5: Run discovery?
     if total > 0 and typer.confirm("\nRun discovery now? (requires ANTHROPIC_API_KEY)", default=True):
         console.print("\n[bold]Running reconciliation + discovery...[/bold]")
@@ -1496,7 +1473,6 @@ def demo(
     import shutil
     import tempfile
     import time
-    from datetime import datetime
 
     start_time = time.time()
 
@@ -1542,23 +1518,14 @@ def demo(
 
         # Step 3: Ingest
         console.print("[bold cyan]Step 3/5:[/bold cyan] Ingesting evidence...")
-        from compass.connectors import get_connector
         from compass.engine.knowledge_graph import KnowledgeGraph
 
         compass_dir = get_compass_dir(workspace)
         kg = KnowledgeGraph(persist_dir=compass_dir / "knowledge")
-        kg.clear()
 
         total = 0
         for source in config.sources:
-            connector_cls = get_connector(source.type)
-            connector = connector_cls(source)
-            evidence = connector.ingest()
-            now = datetime.now()
-            for ev in evidence:
-                ev.source_name = source.name
-                ev.ingested_at = now
-            kg.add_many(evidence)
+            evidence = import_source(kg, source)
             total += len(evidence)
             console.print(f"  [dim]{source.name}: {len(evidence)} items[/dim]")
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
 from compass.config import load_config
+from compass.engine.task_jobs import JobStopped, get_job_manager
 from compass.engine.task_repository import TaskConflict, TaskNotFound
 from compass.engine.task_service import TaskService, source_key
 from compass.models.tasks import ArtifactKind, DraftBody, StrictModel
@@ -55,7 +56,7 @@ def execute(req: Workspace, operation: Callable):
         return operation(TaskService(workspace))
     except TaskNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
-    except TaskConflict as exc:
+    except (TaskConflict, JobStopped) as exc:
         raise HTTPException(409, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, "Workspace not found") from exc
@@ -138,3 +139,37 @@ def accept(req: Acceptance):
     return execute(req, lambda service: view(service, service.accept(
         req.task_id, req.expected_revision, req.kind, req.decision,
     )))
+
+
+class StartJob(Operation):
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+class JobRef(TaskRef):
+    job_id: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/jobs/start", status_code=202)
+def start_job(req: StartJob):
+    return execute(req, lambda service: {"status": "ok", "job": service.start_job(
+        req.task_id, req.expected_revision, req.kind, req.request_id,
+    )})
+
+
+@router.post("/jobs/status")
+def job_status(req: JobRef):
+    return execute(req, lambda service: {"status": "ok", "job": get_job_manager().get(
+        service, req.task_id, req.job_id,
+    )})
+
+
+@router.post("/jobs/latest")
+def latest_job(req: TaskRef):
+    return execute(req, lambda service: {"status": "ok", "job": get_job_manager().latest(service, req.task_id)})
+
+
+@router.post("/jobs/cancel")
+def cancel_job(req: JobRef):
+    return execute(req, lambda service: {"status": "ok", "job": get_job_manager().cancel(
+        service, req.task_id, req.job_id,
+    )})

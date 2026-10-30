@@ -35,6 +35,7 @@ from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
 from compass.engine.reconciler import Reconciler
 from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
+from compass.engine.task_jobs import close_job_manager
 from compass.task_api import router as task_router
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,10 @@ _engine_token = os.environ.get("COMPASS_ENGINE_TOKEN", "")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
+    try:
+        yield
+    finally:
+        close_job_manager()
 
 
 app = FastAPI(title="Compass Engine", version="0.1.0", lifespan=lifespan)

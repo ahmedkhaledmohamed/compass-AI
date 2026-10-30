@@ -39,6 +39,8 @@ function fixture(t, { platform = "darwin", available = true, backend = "gnome_li
     require: (name) => {
       if (name === "electron") return electron;
       if (name === "electron-updater") return { autoUpdater: {} };
+      // Sender authorization is exercised independently in ipc.test.cjs.
+      if (name === "./ipc") return { handleMainIPC: electron.ipcMain.handle };
       if (name.startsWith("./")) return {};
       return require(name);
     },

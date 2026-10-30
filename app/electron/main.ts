@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, safeStorage } from "electron";
+import { pathToFileURL } from "url";
 import path from "path";
 import fs from "fs";
 import { autoUpdater } from "electron-updater";
@@ -21,6 +22,7 @@ if (fs.existsSync(envPath)) {
 import { startEngine, stopEngine, engineFetch, engineRequest } from "./engine-bridge";
 import { registerOAuthIPC, handleOAuthCallback } from "./oauth";
 import { getProvider, getAllProviders } from "./oauth-providers";
+import { handleMainIPC, trustMainWindow } from "./ipc";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -41,6 +43,10 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+
+  trustMainWindow(mainWindow, isDev
+    ? "http://localhost:5173"
+    : pathToFileURL(path.join(__dirname, "../dist/index.html")).href);
 
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");
@@ -119,7 +125,7 @@ app.on("activate", () => {
 });
 
 // IPC: Native folder picker
-ipcMain.handle("select-directory", async () => {
+handleMainIPC("select-directory", async () => {
   const result = await dialog.showOpenDialog({
     properties: ["openDirectory"],
   });
@@ -127,7 +133,7 @@ ipcMain.handle("select-directory", async () => {
 });
 
 // IPC: Native file picker
-ipcMain.handle("select-file", async (_event, filters) => {
+handleMainIPC("select-file", async (_event, filters) => {
   const result = await dialog.showOpenDialog({
     properties: ["openFile"],
     filters: filters || [],
@@ -136,7 +142,7 @@ ipcMain.handle("select-file", async (_event, filters) => {
 });
 
 // IPC: Save file dialog
-ipcMain.handle("save-file", async (_event, defaultName: string, content: string) => {
+handleMainIPC("save-file", async (_event, defaultName: string, content: string) => {
   const result = await dialog.showSaveDialog({
     defaultPath: defaultName,
     filters: [{ name: "Markdown", extensions: ["md"] }],
@@ -148,7 +154,7 @@ ipcMain.handle("save-file", async (_event, defaultName: string, content: string)
 });
 
 // IPC: Export document to file
-ipcMain.handle(
+handleMainIPC(
   "export-document",
   async (
     _event,
@@ -200,7 +206,7 @@ ipcMain.handle(
 );
 
 // IPC: Capture HTML as PNG screenshot
-ipcMain.handle(
+handleMainIPC(
   "capture-html-png",
   async (_event, html: string, defaultName: string) => {
     const result = await dialog.showSaveDialog({
@@ -229,7 +235,7 @@ ipcMain.handle(
 );
 
 // IPC: Engine API call (proxied through main process via engine-bridge)
-ipcMain.handle("engine-call", async (_event, endpoint: string, body?: unknown) => {
+handleMainIPC("engine-call", async (_event, endpoint: string, body?: unknown) => {
   try {
     return await engineFetch(endpoint, body ? { body } : undefined);
   } catch (err) {
@@ -238,7 +244,7 @@ ipcMain.handle("engine-call", async (_event, endpoint: string, body?: unknown) =
 });
 
 // IPC: Engine SSE stream (for chat streaming)
-ipcMain.handle(
+handleMainIPC(
   "engine-stream",
   async (event, endpoint: string, body?: unknown) => {
     try {
@@ -278,7 +284,7 @@ ipcMain.handle(
 );
 
 // IPC: Engine health check
-ipcMain.handle("engine-health", async () => {
+handleMainIPC("engine-health", async () => {
   try {
     return await engineFetch("/health");
   } catch {
@@ -287,7 +293,7 @@ ipcMain.handle("engine-health", async () => {
 });
 
 // IPC: Restart engine after crash
-ipcMain.handle("engine-restart", async () => {
+handleMainIPC("engine-restart", async () => {
   try {
     stopEngine();
     await startEngine();
@@ -307,7 +313,7 @@ function hasSecureSecretStorage(): boolean {
     (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
 }
 
-ipcMain.handle("secrets-store", async (_event, key: string, value: string) => {
+handleMainIPC("secrets-store", async (_event, key: string, value: string) => {
   if (!hasSecureSecretStorage()) {
     throw new Error("Secure credential storage is unavailable. Unlock your OS keychain and try again.");
   }
@@ -317,7 +323,7 @@ ipcMain.handle("secrets-store", async (_event, key: string, value: string) => {
   return true;
 });
 
-ipcMain.handle("secrets-load", async (_event, key: string) => {
+handleMainIPC("secrets-load", async (_event, key: string) => {
   const store = loadSecretsFile();
   const encrypted = store[key];
   if (!encrypted) return null;
@@ -329,7 +335,7 @@ ipcMain.handle("secrets-load", async (_event, key: string) => {
   }
 });
 
-ipcMain.handle("secrets-delete", async (_event, key: string) => {
+handleMainIPC("secrets-delete", async (_event, key: string) => {
   const store = loadSecretsFile();
   delete store[key];
   fs.writeFileSync(secretsPath, JSON.stringify(store), "utf-8");
@@ -367,7 +373,7 @@ function decryptValue(encrypted: string): string | null {
   }
 }
 
-ipcMain.handle(
+handleMainIPC(
   "credential-store",
   async (_event, provider: string, credential: unknown) => {
     const store = loadSecretsFile();
@@ -378,7 +384,7 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle("credential-load", async (_event, provider: string) => {
+handleMainIPC("credential-load", async (_event, provider: string) => {
   const store = loadSecretsFile();
   const key = CREDENTIAL_PREFIX + provider;
   const encrypted = store[key];
@@ -392,7 +398,7 @@ ipcMain.handle("credential-load", async (_event, provider: string) => {
   }
 });
 
-ipcMain.handle("credential-delete", async (_event, provider: string) => {
+handleMainIPC("credential-delete", async (_event, provider: string) => {
   const store = loadSecretsFile();
   const key = CREDENTIAL_PREFIX + provider;
   delete store[key];
@@ -400,7 +406,7 @@ ipcMain.handle("credential-delete", async (_event, provider: string) => {
   return true;
 });
 
-ipcMain.handle("credential-list", async () => {
+handleMainIPC("credential-list", async () => {
   const store = loadSecretsFile();
   const credentials: Array<{
     provider: string;
@@ -440,11 +446,11 @@ ipcMain.handle("credential-list", async () => {
 // --- OAuth Provider Registry IPC ---
 
 function registerProviderIPC(): void {
-  ipcMain.handle("provider-get", async (_event, id: string) => {
+  handleMainIPC("provider-get", async (_event, id: string) => {
     return getProvider(id);
   });
 
-  ipcMain.handle("provider-list", async () => {
+  handleMainIPC("provider-list", async () => {
     return getAllProviders();
   });
 }

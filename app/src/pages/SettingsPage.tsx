@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Settings, Key, Cpu, BarChart3, RotateCcw, Shield, LinkIcon } from "lucide-react";
 import { clsx } from "clsx";
 import { useSettingsStore } from "../stores/settings";
@@ -12,6 +13,7 @@ const MODELS = [
 ];
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const { apiKey, model, tokenUsage, setApiKey, setModel, fetchUsage, loadSettings } =
     useSettingsStore();
 
@@ -69,7 +71,7 @@ export default function SettingsPage() {
         <button
           onClick={() => {
             resetOnboarding();
-            window.location.href = "/onboarding";
+            navigate("/onboarding");
           }}
           className="px-4 py-2 rounded-lg border border-compass-border text-sm text-compass-muted hover:text-compass-text hover:border-compass-accent/20 transition-colors"
         >

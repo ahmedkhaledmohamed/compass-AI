@@ -50,7 +50,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   isDiscovering: false,
 
   setWorkspace: (path, name, description = "") =>
-    set({ workspacePath: path, productName: name, productDescription: description }),
+    set(current => ({ workspacePath: path, productName: name, productDescription: description,
+      ...(current.workspacePath!==path?{sources:[],evidenceCount:0,evidenceSummary:{},ingestionResults:[],ingestionError:"",isIngesting:false}:{}) })),
 
   clearWorkspace: () =>
     set({

@@ -1,7 +1,8 @@
 /** The desktop release exposes only the evidence-to-reviewed-handoff workflow. */
 const engineEndpoints = new Set([
-  "/workspace/info", "/connect", "/ingest", "/refresh",
+  "/workspace/info", "/connect",
   "/evidence", "/evidence/by-id", "/usage", "/sync/status",
+  "/imports/start", "/imports/status", "/imports/latest", "/imports/cancel",
   "/documents/list", "/documents/get",
   ...["create","list","get","sources","evidence","generate","revise","review","accept",
     "jobs/start","jobs/status","jobs/latest","jobs/cancel"].map(route=>`/tasks/${route}`),

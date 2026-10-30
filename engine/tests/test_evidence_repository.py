@@ -96,7 +96,7 @@ def test_corrupt_legacy_fails_and_can_retry_after_repair(tmp_path, payload):
 
 def test_future_schema_is_not_overwritten(tmp_path):
     db = sqlite3.connect(tmp_path / EvidenceRepository.FILE)
-    db.execute("PRAGMA user_version=2")
+    db.execute("PRAGMA user_version=3")
     db.close()
     with pytest.raises(EvidenceStorageError, match="Unsupported"):
         EvidenceRepository(tmp_path)

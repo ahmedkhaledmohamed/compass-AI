@@ -13,12 +13,14 @@ export default function SourceConnector(){
  const [kind,setKind]=useState<"directory"|"file">("directory");
  const [reconnectKinds,setReconnectKinds]=useState<Record<string,"directory"|"file">>({});
  const [selection,setSelection]=useState<{id:string;label:string}|null>(null);
- const [busy,setBusy]=useState(false),[error,setError]=useState("");
+ const [pending,setPending]=useState(false),[error,setError]=useState("");
+ const importing=useWorkspaceStore(s=>s.isIngesting);
+ const busy=pending||importing;
  async function choose(){
-  setBusy(true);setError("");
+  setPending(true);setError("");
   try{const chosen=await window.compass.workspaces.choose("source",kind);if(chosen){setSelection(chosen);if(!name.trim())setName(chosen.label);}}
   catch(cause){setError(cause instanceof Error?cause.message:"The source picker could not be opened.");}
-  finally{setBusy(false);}
+  finally{setPending(false);}
  }
  async function connect(source:SourceConfig|undefined,selected:{id:string;label:string}){
   if(!workspace)return;
@@ -30,16 +32,16 @@ export default function SourceConnector(){
  }
  async function add(event:React.FormEvent){
   event.preventDefault();if(!selection||!name.trim()||busy)return;
-  setBusy(true);setError("");
+  setPending(true);setError("");
   try{await connect(undefined,selection);setName("");setSelection(null);}
   catch(cause){setError(cause instanceof Error?cause.message:"The source could not be added.");}
-  finally{setBusy(false);}
+  finally{setPending(false);}
  }
  async function reconnect(source:SourceConfig){
-  setBusy(true);setError("");
+  setPending(true);setError("");
   try{const selected=await window.compass.workspaces.choose("source",reconnectKinds[source.id||source.name]||source.selection_kind||defaultKind(source.type));if(selected)await connect(source,selected);}
   catch(cause){setError(cause instanceof Error?cause.message:"The source could not be reconnected.");}
-  finally{setBusy(false);}
+  finally{setPending(false);}
  }
  return <div className="space-y-5">
   {error&&<p role="alert" className="text-red-400 text-sm">{error}</p>}

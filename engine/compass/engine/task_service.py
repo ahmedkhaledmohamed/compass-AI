@@ -143,7 +143,7 @@ class TaskService:
             "accepted_brief": accepted_brief,
             "evidence": [{"id": item.id, "source": source_key(item),
                           "source_type": item.source_type.value, "title": item.title,
-                          "content": item.content, "recorded_timestamp": item.timestamp.isoformat()}
+                          "content": item.content, "coverage": item.metadata.get("source_coverage"), "recorded_timestamp": item.timestamp.isoformat()}
                          for item in self.selected_evidence(task)],
         }
         context = json.dumps(data, ensure_ascii=False)

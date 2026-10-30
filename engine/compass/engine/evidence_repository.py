@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import tempfile
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
@@ -39,7 +42,7 @@ class EvidenceRepository:
             with self._lock:
                 self._db.execute("BEGIN IMMEDIATE")
                 version = self._db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
+                if version not in (0, 1, 2):
                     raise EvidenceStorageError(f"Unsupported evidence database version: {version}")
                 if version == 0:
                     items = self._legacy_items(directory)
@@ -52,12 +55,50 @@ class EvidenceRepository:
                     )
                     self._write(items)
                     self._db.execute("PRAGMA user_version = 1")
+                if version == 1 and directory:
+                    self._backup_v1(directory)
+                if version in (0, 1):
+                    self._db.execute("CREATE TABLE import_jobs (id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, "
+                                     "state TEXT NOT NULL, deadline REAL NOT NULL, created_at REAL NOT NULL, payload TEXT NOT NULL)")
+                    self._db.execute("CREATE UNIQUE INDEX one_active_import ON import_jobs((1)) WHERE state IN ('queued','running')")
+                    self._db.execute("PRAGMA user_version=2")
+                for table in ("snapshots", "active_snapshot", "import_jobs"):
+                    self._db.execute(f"SELECT * FROM {table} LIMIT 0")
                 self._db.execute("COMMIT")
         except Exception:
             if self._db.in_transaction:
                 self._db.execute("ROLLBACK")
             self._db.close()
             raise
+
+    def _backup_v1(self, directory):
+        descriptor, temporary = tempfile.mkstemp(prefix="evidence-v1-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write("\n".join(self._db.iterdump()))
+                output.write("\nPRAGMA user_version=1;\n")
+                output.flush()
+                os.fsync(output.fileno())
+            with sqlite3.connect(":memory:") as restored:
+                restored.executescript(Path(temporary).read_text())
+                for table in ("snapshots", "active_snapshot"):
+                    if restored.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall() != self._db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall():
+                        raise EvidenceStorageError("Evidence migration backup did not match the saved evidence")
+            os.replace(temporary, Path(temporary).with_suffix(".sql"))
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    @contextmanager
+    def transaction(self):
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._db
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
 
     @staticmethod
     def _legacy_items(directory: Path | None) -> list[Evidence]:

@@ -150,14 +150,18 @@ export class WorkspaceAccess {
       const data=this.read();const current=data.workspaces.find(item=>item.id===record.id)!;
       current.sources=current.sources.filter(item=>result.source_id && item.id?item.id!==result.source_id:item.name!==name);current.sources.push({...selected,id:result.source_id,type,name});this.write(data);this.selections.delete(input.path as string);return result;
     });
-    if(endpoint==="/ingest" || endpoint==="/refresh") {
+    if(endpoint==="/ingest" || endpoint==="/refresh" || endpoint==="/imports/start") {
+      const selectedIds=input.source_ids;
+      if(endpoint==="/imports/start" && (!Array.isArray(selectedIds)||!selectedIds.length||selectedIds.length>100||new Set(selectedIds).size!==selectedIds.length||selectedIds.some(id=>typeof id!=="string"||!/^src_[a-f0-9]{32}$/.test(id))))throw new Error("Select distinct configured sources to import.");
       const info=await this.engine("/workspace/info",{workspace_path:record.path});
       if(info.status!=="ok" || !Array.isArray(info.sources))throw new Error("Source configuration could not be checked.");
+      if(endpoint==="/imports/start" && (selectedIds as string[]).some(id=>!info.sources.some((source:any)=>source.id===id)))throw new Error("A selected source is no longer configured.");
       for(const source of info.sources) {
+        if(endpoint==="/imports/start" && !(selectedIds as string[]).includes(source.id))continue;
         if(endpoint==="/refresh" && (input.source_id ? source.id!==input.source_id : input.source_name && source.name!==input.source_name))continue;
         const approval=record.sources.find(item=>(item.id?item.id===source.id:item.name===source.name) && item.type===source.type && item.path===source.path);
         if(!approval || source.url || source.auth || Object.keys(source.options||{}).length)throw new Error("Select each source again with the native picker before importing this workspace.");
-        unchanged(approval);await this.assertSourceTree(approval);
+        unchanged(approval);if(endpoint!=="/imports/start")await this.assertSourceTree(approval);
       }
     }
     const result=await invoke(endpoint,request);

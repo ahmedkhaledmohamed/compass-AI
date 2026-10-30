@@ -35,6 +35,7 @@ from compass.engine.orchestrator import configure_orchestrator, get_orchestrator
 from compass.engine.reconciler import Reconciler
 from compass.engine.source_import import import_source, import_status
 from compass.engine.specifier import Specifier
+from compass.task_api import router as task_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Compass Engine", version="0.1.0", lifespan=lifespan)
+app.include_router(task_router)
 
 @app.middleware("http")
 async def authenticate_engine_request(request: Request, call_next):

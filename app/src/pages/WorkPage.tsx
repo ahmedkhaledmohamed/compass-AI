@@ -48,11 +48,12 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notice,setNotice]=useState("");
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     const token = ++epoch.current;
-    setTask(null); setJob(null); setEvidence([]); setError(""); setBusy("Loading work…");
+    setTask(null); setJob(null); setEvidence([]); setError("");setNotice(""); setBusy("Loading work…");
     async function load() {
       try {
         const [list, available, aiStatus] = await Promise.all([
@@ -144,8 +145,13 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
   async function operate(endpoint: string, kind: ArtifactKind, extra: object = {}) {
     if (!task) return;
     const token = epoch.current;
-    setBusy(endpoint === "generate" ? "Generating draft…" : "Saving review…"); setError("");
+    setBusy(endpoint === "generate" ? "Generating draft…" : endpoint === "export" ? "Exporting reviewed artifact…" : "Saving review…"); setError("");setNotice("");
     try {
+      if(endpoint === "export"){
+        const result=await window.compass.app.exportTask({workspace_path:workspace,task_id:task.id,expected_revision:task.revision,kind});
+        if(epoch.current===token)setNotice(result.status==="saved"?`Saved ${result.filename}. This copy includes cited source text; deleting Compass data will not remove it.`:"Export cancelled. Saved work was kept.");
+        return;
+      }
       if (endpoint === "generate") {
         const result = await call<{ job: GenerationJob }>(workspace, "jobs/start", {
           task_id: task.id, expected_revision: task.revision, kind, request_id: crypto.randomUUID(),
@@ -184,6 +190,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
           {job.draining && <p className="text-neutral-400">The provider request is still stopping. Its result will not be saved; wait before starting another generation.</p>}
           {["queued", "running"].includes(job.state) && <><p className="text-neutral-400">Cancelling prevents this draft from being saved. An already-sent request may still incur provider usage.</p><button className={button} disabled={!!busy} onClick={() => void cancel()}>Cancel generation</button></>}
         </div>}
+        {notice&&<p role="status" className="mb-6 text-sm text-neutral-300">{notice}</p>}
         {error && <div role="alert" className="mb-6 rounded-md border border-red-400/50 p-4 text-red-200">{error}<button className={`${button} block mt-3`} onClick={() => setReload((value) => value + 1)}>Reload task</button></div>}
         {!taskId && <form onSubmit={create} className="space-y-5 max-w-2xl">
           <h2 className="text-xl font-medium">Start with a decision</h2>
@@ -221,6 +228,7 @@ function ArtifactReview({ kind, artifact, workspace, taskId, evidence, disabled,
   const reviewed = artifact.reviews.every((review) => review !== "unreviewed") && artifact.reviews.includes("accepted");
   return <section aria-label={kind === "brief" ? "Decision brief" : "Specification handoff"} className="space-y-5">
     <div className="flex justify-between items-start gap-4"><div><h3 className="text-lg font-semibold">{kind === "brief" ? "Decision brief" : "Specification handoff"}</h3><p className="text-sm text-neutral-400 mt-1">{artifact.state === "accepted" ? "Accepted by you" : "Draft for your review"}. Model: {artifact.model}. {artifact.input_tokens != null && artifact.output_tokens != null ? `${artifact.input_tokens} input / ${artifact.output_tokens} output tokens.` : "Token usage unavailable."}</p></div><button className={button} disabled={disabled || stale || dirty || !canGenerate} onClick={() => onAction("generate")}>Generate a new draft</button></div>
+    <div><button className={button} disabled={disabled||dirty||artifact.state!=="accepted"} onClick={()=>onAction("export")}>Export reviewed Markdown</button><p className="text-xs text-neutral-400 mt-2">Includes saved edits, reviewed claims, cited passages and a source manifest. Save corrections and accept the artifact before exporting.</p></div>
     {artifact.connection&&<p className="text-xs text-neutral-400">Generated with {artifact.connection.provider}{artifact.connection.serving_provider?` via ${artifact.connection.serving_provider}`:""} · connection {artifact.connection.id.slice(-6)} · selection {artifact.connection.revision}. Selected model: {artifact.connection.model}.</p>}
     {artifact.retrieval&&<details className="border border-compass-border rounded p-3 text-sm"><summary className="cursor-pointer">AI evidence context ({artifact.retrieval.passages.length} passages)</summary>
       <p className="mt-3 text-neutral-400">{artifact.retrieval.provided_characters.toLocaleString()} of {artifact.retrieval.total_characters.toLocaleString()} saved characters were provided from {artifact.retrieval.selected_documents} selected documents. {artifact.retrieval.status==="partial"?"Other saved text was not provided.":"All saved text fit."}</p>

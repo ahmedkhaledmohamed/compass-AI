@@ -226,3 +226,9 @@ def cancel_job(req: JobRef):
     return execute(req, lambda service: {"status": "ok", "job": get_job_manager().cancel(
         service, req.task_id, req.job_id,
     )})
+
+
+@router.post("/export")
+def export_reviewed_task(req: Operation):
+    from compass.engine.task_export import export_task
+    return execute(req, lambda service: {"status": "ok", **export_task(service, req.task_id, req.expected_revision, req.kind)})

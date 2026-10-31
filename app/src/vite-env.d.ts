@@ -10,6 +10,7 @@ interface CompassEngine {
 }
 
 interface CompassApp {
+  exportTask: (request: {workspace_path:string;task_id:string;expected_revision:number;kind:"brief"|"handoff"}) => Promise<{status:"saved"|"cancelled";filename?:string}>;
   selectDirectory: () => Promise<string | null>;
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>;
   saveFile: (defaultName: string, content: string) => Promise<string | null>;

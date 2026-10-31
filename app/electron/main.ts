@@ -23,6 +23,7 @@ import { startEngine, stopEngine, engineFetch } from "./engine-bridge";
 import { handleMainIPC, trustMainWindow } from "./ipc";
 import { requireReleaseEndpoint } from "./release-policy";
 import { WorkspaceAccess } from "./workspace-access";
+import { saveTaskExport } from "./task-export";
 import { AIVault } from "./ai-vault";
 import { AIConnections, engineOperation } from "./ai-connections";
 
@@ -344,3 +345,9 @@ handleMainIPC("workspaces-create",(_event,selection,name,description)=>nativeWor
 handleMainIPC("workspaces-open",()=>nativeWorkspaces().open());
 handleMainIPC("workspaces-activate",(_event,id)=>nativeWorkspaces().activate(id));
 handleMainIPC("workspaces-forget",(_event,id)=>nativeWorkspaces().forget(id));
+
+
+handleMainIPC("task-export",async(_event,request)=>saveTaskExport(nativeWorkspaces(),request,async name=>{
+  const result=await dialog.showSaveDialog({defaultPath:name,filters:[{name:"Markdown",extensions:["md"]}],message:"Save the accepted artifact, cited passages and source manifest. Exported copies remain separate from Compass."});
+  return result.canceled?null:result.filePath||null;
+}));

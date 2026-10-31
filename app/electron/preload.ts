@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("compass", {
     },
   },
   app: {
+    exportTask: (request: {workspace_path:string;task_id:string;expected_revision:number;kind:"brief"|"handoff"}) => ipcRenderer.invoke("task-export",request),
     saveFile: (defaultName: string, content: string) =>
       ipcRenderer.invoke("save-file", defaultName, content),
 

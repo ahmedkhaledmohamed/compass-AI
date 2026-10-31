@@ -1,3 +1,4 @@
+import WorkspaceRecovery from "./WorkspaceRecovery";
 import {useState} from "react";
 import {useWorkspaceStore} from "../../stores/workspace";
 import { FolderOpen, Plus, Trash2, Clock } from "lucide-react";
@@ -74,6 +75,7 @@ export default function WorkspacePicker({ onSelect, onCreateNew }: Props) {
           <Plus className="w-4 h-4" />
           Create New Product
         </button>
+        <WorkspaceRecovery workspace={null}/>
       </div>
     </div>
   );

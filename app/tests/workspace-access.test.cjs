@@ -152,3 +152,36 @@ test('import jobs check only explicitly selected sources and retain workspace sc
  await assert.rejects(f.access.request('/imports/start',{workspace_path:record.id,source_ids:[],request_id:'empty'}),/Select distinct/);
  await assert.rejects(f.access.request('/imports/start',{workspace_path:record.id,source_ids:[source.source_id,source.source_id],request_id:'duplicate'}),/Select distinct/);
 });
+
+test('native backup selects its output itself and exposes counts without paths',async t=>{
+ const f=fixture(t),{folderPath,record}=await f.create();
+ const calls=[];const access=new WorkspaceAccess(f.file,f.pick,async(endpoint,body)=>{calls.push({endpoint,body});return {status:'ok',tasks:2,snapshots:3,documents:1,bytes:200};});
+ const destination=path.join(f.root,'private.compass-backup.json');
+ assert.deepEqual(await access.backup(record.id,async()=>null),{status:'cancelled'});assert.equal(calls.length,0);
+ const result=await access.backup(record.id,async()=>destination);
+ assert.equal(calls[0].body.workspace_path,folderPath);assert.equal(calls[0].body.backup_path,destination);
+ assert.equal(JSON.stringify(result).includes(destination),false);assert.equal(result.tasks,2);
+ await assert.rejects(access.backup(folderPath,async()=>destination),/picker/);
+ const {requireReleaseEndpoint}=require('../dist-electron/release-policy.js');
+ for(const endpoint of ['/workspace/backup','/workspace/restore'])assert.throws(()=>requireReleaseEndpoint(endpoint),/not available/);
+});
+test('restore registers only a new child of the chosen parent with no source approvals',async t=>{
+ const f=fixture(t),backup=path.join(f.root,'saved.compass-backup.json');fs.writeFileSync(backup,'fictional archive');
+ const parent=f.folder('parent');f.choices.push(backup,parent);let sent;
+ const access=new WorkspaceAccess(f.file,f.pick,async(endpoint,body)=>{
+  if(endpoint==='/connections/readiness')return {status:'ok',busy:false};
+  assert.equal(endpoint,'/workspace/restore');sent=body;
+  const restored=path.join(parent,'Compass restored '+'a'.repeat(32));fs.mkdirSync(path.join(restored,'.compass'),{recursive:true});fs.writeFileSync(path.join(restored,'.compass','compass.yaml'),'fictional config');
+  return {status:'ok',workspace_path:restored,name:'Restored product',description:''};
+ });
+ const restored=await access.restore();assert.match(restored.id,/^ws_/);assert.equal(restored.path,restored.id);
+ assert.equal(sent.parent_path,parent);assert.equal(sent.backup_path,fs.realpathSync(backup));assert.equal(JSON.stringify(restored).includes(parent),false);
+ const registry=JSON.parse(fs.readFileSync(f.file));assert.deepEqual(registry.workspaces[0].sources,[]);
+});
+test('restore cancellation, busy engine and out-of-parent responses grant no workspace',async t=>{
+ const f=fixture(t);assert.equal(await f.access.restore(),null);
+ f.setBusy(true);await assert.rejects(f.access.restore(),/Finish or cancel/);assert.equal(f.access.list().workspaces.length,0);f.setBusy(false);
+ const backup=path.join(f.root,'saved.compass-backup.json');fs.writeFileSync(backup,'fictional archive');const parent=f.folder('parent');f.choices.push(backup,parent);
+ const access=new WorkspaceAccess(f.file,f.pick,async endpoint=>endpoint==='/connections/readiness'?{status:'ok',busy:false}:{status:'ok',workspace_path:path.join(f.root,'outside'),name:'Other'});
+ await assert.rejects(access.restore(),/could not be registered/);assert.equal(access.list().workspaces.length,0);
+});

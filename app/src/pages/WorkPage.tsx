@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import TaskEvidenceSearch, {SavedPassage} from "../components/workspace/TaskEvidenceSearch";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useWorkspaceManager } from "../stores/workspaceManager";
 import type { Evidence } from "../types/engine";
@@ -7,7 +8,7 @@ import type { Artifact, ArtifactKind, DecisionTask, DraftBody, GenerationJob, Ta
 
 const input = "w-full rounded-md border border-compass-border bg-compass-card p-3 text-compass-text focus:outline-none focus:ring-2 focus:ring-compass-accent disabled:opacity-60";
 const button = "rounded-md border border-compass-border px-3 py-2 text-sm hover:bg-compass-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-compass-accent disabled:opacity-40 disabled:cursor-not-allowed";
-const stages: Record<string, string> = { queued: "Waiting to generate", validating: "Checking task and sources", generating: "Waiting for AI response", validating_output: "Checking citations and draft", committing: "Saving draft" };
+const stages: Record<string, string> = { queued: "Waiting to generate", retrieving:"Finding relevant saved passages", validating: "Checking task and sources", generating: "Waiting for AI response", validating_output: "Checking citations and draft", committing: "Saving draft" };
 const primary = `${button} bg-compass-accent text-white hover:bg-compass-accent-hover`;
 
 async function call<T>(workspace: string, endpoint: string, body: object = {}): Promise<T> {
@@ -64,7 +65,7 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
         if (taskId) {
           let [result, saved, pending] = await Promise.all([
             call<{ task: DecisionTask; stale: boolean }>(workspace, "get", { task_id: taskId }),
-            call<{ items: Evidence[] }>(workspace, "evidence", { task_id: taskId }),
+            call<{ items: Evidence[] }>(workspace, "evidence", { task_id: taskId,summary_only:true }),
             call<{ job: GenerationJob | null }>(workspace, "jobs/latest", { task_id: taskId }),
           ]);
           if (epoch.current !== token) return;
@@ -199,9 +200,10 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
         {task && <div className="space-y-7">
           <div><h2 className="text-2xl leading-snug font-medium max-w-[36ch]">{task.question}</h2><p className="mt-3 text-neutral-400 text-sm">For {task.reader}</p><p className="mt-1 text-sm">Useful result: {task.completion_condition}</p></div>
           {stale && <div role="status" className="border-l-4 border-amber-400 pl-4 text-amber-200">Selected sources have changed. This task keeps its original evidence and edits. Start a new task to investigate the updated sources.</div>}
-          <details className="border-y border-compass-border py-4"><summary className="cursor-pointer font-medium">Selected evidence ({evidence.length} {evidence.length === 1 ? "item" : "items"})</summary><div className="mt-4 space-y-3">{evidence.map((item) => <details key={item.id}><summary className="cursor-pointer text-sm">{item.title} <span className="text-neutral-400">({item.source_type})</span></summary><pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-sans text-sm text-neutral-300">{item.content}</pre></details>)}</div></details>
+          <details className="border-y border-compass-border py-4"><summary className="cursor-pointer font-medium">Selected evidence ({evidence.length} {evidence.length === 1 ? "item" : "items"})</summary><div className="mt-4 space-y-3">{evidence.map((item) => <details key={item.id}><summary className="cursor-pointer text-sm">{item.title} <span className="text-neutral-400">({item.source_type})</span></summary><pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-sans text-sm text-neutral-300">{item.content}</pre>{item.content_partial&&<p className="text-xs text-neutral-400">Preview shortened from {item.content_length?.toLocaleString()} saved characters. Search saved evidence below for other passages.</p>}</details>)}</div></details>
+          <TaskEvidenceSearch key={task.id} workspace={workspace} taskId={task.id}/>
           {!task.brief && <button className={primary} disabled={!!busy || working || stale || !activeAI} onClick={() => void operate("generate", "brief")}>Generate decision brief</button>}
-          {(["brief", "handoff"] as const).map((kind) => task[kind] && <ArtifactReview key={`${task.id}-${task.revision}-${kind}`} kind={kind} artifact={task[kind]!} evidence={evidence} canGenerate={!!activeAI} disabled={!!busy || working} stale={stale} onAction={(endpoint, extra) => void operate(endpoint, kind, extra)} />)}
+          {(["brief", "handoff"] as const).map((kind) => task[kind] && <ArtifactReview key={`${task.id}-${task.revision}-${kind}`} kind={kind} artifact={task[kind]!} workspace={workspace} taskId={task.id} evidence={evidence} canGenerate={!!activeAI} disabled={!!busy || working} stale={stale} onAction={(endpoint, extra) => void operate(endpoint, kind, extra)} />)}
           {task.brief?.state === "accepted" && !task.handoff && <button className={primary} disabled={!!busy || working || stale || !activeAI} onClick={() => void operate("generate", "handoff")}>Draft specification handoff</button>}
         </div>}
       </div>
@@ -209,8 +211,8 @@ function TaskWorkspace({ workspace }: { workspace: string }) {
   </div>;
 }
 
-function ArtifactReview({ kind, artifact, evidence, disabled, stale, canGenerate, onAction }: {
-  kind: ArtifactKind; artifact: Artifact; evidence: Evidence[]; disabled: boolean; stale: boolean; canGenerate: boolean;
+function ArtifactReview({ kind, artifact, workspace, taskId, evidence, disabled, stale, canGenerate, onAction }: {
+  kind: ArtifactKind; artifact: Artifact; workspace:string;taskId:string;evidence: Evidence[]; disabled: boolean; stale: boolean; canGenerate: boolean;
   onAction: (endpoint: string, extra?: object) => void;
 }) {
   const [body, setBody] = useState<DraftBody>(() => structuredClone(artifact.body));
@@ -219,6 +221,13 @@ function ArtifactReview({ kind, artifact, evidence, disabled, stale, canGenerate
   const reviewed = artifact.reviews.every((review) => review !== "unreviewed") && artifact.reviews.includes("accepted");
   return <section aria-label={kind === "brief" ? "Decision brief" : "Specification handoff"} className="space-y-5">
     <div className="flex justify-between items-start gap-4"><div><h3 className="text-lg font-semibold">{kind === "brief" ? "Decision brief" : "Specification handoff"}</h3><p className="text-sm text-neutral-400 mt-1">{artifact.state === "accepted" ? "Accepted by you" : "Draft for your review"}. Model: {artifact.model}. {artifact.input_tokens != null && artifact.output_tokens != null ? `${artifact.input_tokens} input / ${artifact.output_tokens} output tokens.` : "Token usage unavailable."}</p></div><button className={button} disabled={disabled || stale || dirty || !canGenerate} onClick={() => onAction("generate")}>Generate a new draft</button></div>
+    {artifact.retrieval&&<details className="border border-compass-border rounded p-3 text-sm"><summary className="cursor-pointer">AI evidence context ({artifact.retrieval.passages.length} passages)</summary>
+      <p className="mt-3 text-neutral-400">{artifact.retrieval.provided_characters.toLocaleString()} of {artifact.retrieval.total_characters.toLocaleString()} saved characters were provided from {artifact.retrieval.selected_documents} selected documents. {artifact.retrieval.status==="partial"?"Other saved text was not provided.":"All saved text fit."}</p>
+      {artifact.edited_by_user&&<p className="mt-2 text-neutral-400">This is the original AI context. The draft includes your saved edits.</p>}
+      {artifact.retrieval.import_omission_documents>0&&<p className="mt-2 text-amber-200">{artifact.retrieval.import_omission_documents} documents have reported import omissions.</p>}
+      {artifact.retrieval.unknown_import_documents>0&&<p className="mt-2 text-neutral-400">Import coverage is unknown for {artifact.retrieval.unknown_import_documents} documents.</p>}
+      <ol className="space-y-3 mt-3">{artifact.retrieval.passages.map(passage=><li key={passage.chunk_id} className="border-t border-compass-border pt-3"><p>{passage.rank}. {evidence.find(item=>item.id===passage.evidence_id)?.title||passage.evidence_id} · lines {passage.line_start}–{passage.line_end}{passage.reason==="accepted_brief"?" · retained brief support":""}</p><SavedPassage workspace={workspace} taskId={taskId} evidenceId={passage.evidence_id} start={passage.start} end={passage.end}/></li>)}</ol>
+    </details>}
     <label className="block space-y-2"><span className="text-sm">Title</span><input className={input} value={body.title} disabled={disabled} onChange={(event) => setBody({ ...body, title: event.target.value })} /></label>
     <label className="block space-y-2"><span className="text-sm">Summary to review</span><textarea className={input} rows={3} disabled={disabled} value={body.summary} onChange={(event) => setBody({ ...body, summary: event.target.value })} /></label>
     <div><h4 className="font-medium mb-3">Review each claim</h4><p className="text-sm text-neutral-400 mb-4">Check that each cited passage supports the claim. Exact quotes have been checked; their meaning still needs your review.</p>
@@ -227,7 +236,7 @@ function ArtifactReview({ kind, artifact, evidence, disabled, stale, canGenerate
         <label className="block"><span className="sr-only">Claim {index + 1}</span><textarea className={input} rows={2} disabled={disabled} value={claim.text} onChange={(event) => setBody({ ...body, claims: body.claims.map((item, i) => i === index ? { ...item, text: event.target.value } : item) })} /></label>
         {claim.citations.map((citation, number) => {
           const source = evidence.find((item) => item.id === citation.evidence_id);
-          return <details key={number} className="text-sm border-l-2 border-compass-accent pl-3"><summary className="cursor-pointer">Supporting passage: {source?.title || citation.evidence_id}</summary><blockquote className="mt-2 whitespace-pre-wrap text-neutral-300">{citation.quote}</blockquote><p className="mt-2 text-xs text-neutral-400">{source?.source_name || source?.connector} ({source?.source_type}). Saved passage {citation.start}–{citation.end}. {source?.ingested_at && !source.metadata.legacy_ingested_at_unknown ? `Imported ${new Date(source.ingested_at).toLocaleDateString()}.` : "Import date unknown."}</p></details>;
+          return <details key={number} className="text-sm border-l-2 border-compass-accent pl-3"><summary className="cursor-pointer">Supporting passage: {source?.title || citation.evidence_id}</summary><blockquote className="mt-2 whitespace-pre-wrap text-neutral-300">{citation.quote}</blockquote><SavedPassage workspace={workspace} taskId={taskId} evidenceId={citation.evidence_id} start={Math.max(0,citation.start-200)} end={Math.min(source?.content_length??citation.end,citation.end+200)}/><p className="mt-2 text-xs text-neutral-400">{source?.source_name || source?.connector} ({source?.source_type}). Saved passage {citation.start}–{citation.end}. {source?.ingested_at && !source.metadata.legacy_ingested_at_unknown ? `Imported ${new Date(source.ingested_at).toLocaleDateString()}.` : "Import date unknown."}</p></details>;
         })}
         <div className="flex gap-2"><button className={button} disabled={disabled || dirty} onClick={() => onAction("review", { claim_index: index, decision: "accepted" })}>Keep claim</button><button className={button} disabled={disabled || dirty} onClick={() => onAction("review", { claim_index: index, decision: "rejected" })}>Reject claim</button></div>
       </div>)}

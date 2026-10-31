@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from compass.config import load_config
+from compass.engine.passage_retrieval import RetrievalError
 from compass.engine.provider_transport import ProviderError
 from compass.engine.task_jobs import JobStopped, get_job_manager
 from compass.engine.task_repository import TaskConflict, TaskNotFound
@@ -62,6 +63,8 @@ def execute(req: Workspace, operation: Callable):
         raise HTTPException(409, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(404, "Workspace not found") from exc
+    except RetrievalError as exc:
+        return JSONResponse(status_code=503, content={"status":"error","code":"retrieval_error","message":str(exc)})
     except ProviderError as exc:
         return JSONResponse(status_code=422, content={"status": "error", "code": exc.code, "message": str(exc)})
     except ValueError as exc:
@@ -108,12 +111,44 @@ def sources(req: Workspace):
     return execute(req, result)
 
 
+class EvidenceRequest(TaskRef):
+    summary_only: bool = False
+
+
+class RetrievalRequest(TaskRef):
+    query: str | None = Field(default=None, max_length=4000)
+
+
+class PassageRequest(TaskRef):
+    evidence_id: str = Field(min_length=1, max_length=128)
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+
+
+@router.post("/retrieve")
+def retrieve_passages(req: RetrievalRequest):
+    return execute(req, lambda service: {"status":"ok", **service.retrieve(service.tasks.read(req.task_id), req.query)})
+
+
+@router.post("/passage")
+def saved_passage(req: PassageRequest):
+    return execute(req, lambda service: {"status":"ok", "passage":service.passage(service.tasks.read(req.task_id), req.evidence_id, req.start, req.end)})
+
+
 @router.post("/evidence")
-def evidence(req: TaskRef):
+def evidence(req: EvidenceRequest):
     def result(service):
         task = service.tasks.read(req.task_id)
+        items = service.selected_evidence(task)
+        if req.summary_only:
+            summaries = []
+            for item in items[:1000]:
+                summaries.append({**item.model_dump(mode="json"), "title":item.title[:240], "content":item.content[:500],
+                                  "content_length":len(item.content), "content_partial":len(item.content)>500,
+                                  "metadata":{key:item.metadata[key] for key in ("source_coverage","relative_path","legacy_ingested_at_unknown") if key in item.metadata}})
+            return {"status":"ok","snapshot":task.evidence_snapshot,"items":summaries,"total":len(items)}
         return {"status": "ok", "snapshot": task.evidence_snapshot,
-                "items": [item.model_dump(mode="json") for item in service.selected_evidence(task)]}
+                "items": [item.model_dump(mode="json") for item in items]}
     return execute(req, result)
 
 

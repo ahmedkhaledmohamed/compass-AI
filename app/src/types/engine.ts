@@ -18,6 +18,8 @@ export interface Evidence {
   connector: string;
   title: string;
   content: string;
+  content_partial?:boolean;
+  content_length?:number;
   metadata: Record<string, unknown>;
   timestamp: string;
   source_name?: string;

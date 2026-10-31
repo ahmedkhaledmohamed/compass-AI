@@ -40,6 +40,10 @@ class JobContext:
             db.execute("UPDATE jobs SET stage=?, updated_at=? WHERE id=?",
                        (stage, time.time(), self.id))
 
+    def check(self):
+        with self.repository._connect() as db:
+            check_job(db, self.id)
+
     def control(self):
         with self.repository._connect() as db:
             deadline = db.execute("SELECT deadline FROM jobs WHERE id=?", (self.id,)).fetchone()[0]
@@ -165,6 +169,11 @@ class JobManager:
             self._stop(repository, job_id, "timed_out")
             raise
         except Exception as exc:
+            from compass.engine.passage_retrieval import (
+                RetrievalBudget,
+                RetrievalEmpty,
+                RetrievalError,
+            )
             from compass.engine.task_service import ContextBudgetExceeded
             code, message = "provider_error", "The AI request failed. Check the selected connection and try again."
             if isinstance(exc, ProviderError):
@@ -174,8 +183,12 @@ class JobManager:
                         db.execute("UPDATE jobs SET completion=? WHERE id=?", (json.dumps(exc.completion), job_id))
             elif isinstance(exc, TaskConflict):
                 code, message = "task_changed", "Task or evidence changed during generation. Reload before trying again."
-            elif isinstance(exc, ContextBudgetExceeded):
+            elif isinstance(exc, (ContextBudgetExceeded, RetrievalBudget)):
                 code, message = "context_limit", "Selected evidence exceeds the context limit. Select fewer sources; nothing was silently omitted."
+            elif isinstance(exc, RetrievalEmpty):
+                code, message = "retrieval_empty", str(exc)
+            elif isinstance(exc, RetrievalError):
+                code, message = "retrieval_error", str(exc)
             elif isinstance(exc, ValueError):
                 code, message = "invalid_output", "The draft could not be validated. Nothing was saved; review the selected evidence and try again."
             with repository._connect() as db:

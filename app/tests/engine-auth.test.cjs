@@ -89,3 +89,10 @@ test("caller-controlled endpoints cannot send the token to another origin", asyn
   assert.equal(requests.length, 1);
   bridge.stopEngine();
 });
+
+test("desktop child environment drops provider credentials and requires native grants",()=>{
+ const {bridge}=fixture();
+ const environment=bridge.engineEnvironment({PATH:'/fictional/bin',ANTHROPIC_API_KEY:'fictional-secret',OPENROUTER_API_KEY:'fictional-secret',HF_TOKEN:'fictional-hf',COMPASS_CHATGPT_ACCESS_TOKEN:'fictional-secret',COMPASS_AUTH_TOKEN:'fictional-secret'});
+ assert.equal(environment.PATH,'/fictional/bin');assert.equal(environment.COMPASS_NATIVE_INFERENCE_ONLY,'1');
+ for(const name of ['ANTHROPIC_API_KEY','OPENROUTER_API_KEY','HF_TOKEN','COMPASS_CHATGPT_ACCESS_TOKEN','COMPASS_AUTH_TOKEN'])assert.equal(environment[name],undefined);
+});

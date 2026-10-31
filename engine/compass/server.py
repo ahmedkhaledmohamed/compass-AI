@@ -179,6 +179,8 @@ def usage():
 @app.post("/configure")
 def configure(req: ConfigureRequest):
     """Reconfigure the LLM provider at runtime (e.g. from the Settings page)."""
+    if os.environ.get("COMPASS_NATIVE_INFERENCE_ONLY") == "1":
+        raise HTTPException(403, "Desktop credentials remain in the native connection store")
     try:
         orch = configure_orchestrator(
             api_key=req.api_key,
@@ -202,6 +204,8 @@ def configure(req: ConfigureRequest):
 @app.post("/credentials/inject")
 def inject_credential(req: InjectCredentialRequest):
     """Inject a decrypted credential at runtime. Held in memory only."""
+    if os.environ.get("COMPASS_NATIVE_INFERENCE_ONLY") == "1":
+        raise HTTPException(403, "Desktop credentials remain in the native connection store")
     _credentials[req.provider] = {
         "provider": req.provider,
         "access_token": req.access_token,

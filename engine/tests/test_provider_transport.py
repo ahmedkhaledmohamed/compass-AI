@@ -332,6 +332,7 @@ def test_cancellation_closes_a_real_pending_loopback_socket():
 def test_v2_generation_history_migrates_with_backup(tmp_path):
     repo = TaskRepository(tmp_path)
     with sqlite3.connect(repo.path) as db:
+        db.execute("ALTER TABLE jobs DROP COLUMN connection")
         db.execute("ALTER TABLE jobs DROP COLUMN completion")
         db.execute("PRAGMA user_version=2")
     TaskRepository(tmp_path)

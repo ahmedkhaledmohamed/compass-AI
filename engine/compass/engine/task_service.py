@@ -6,6 +6,7 @@ from typing import Literal
 from uuid import uuid4
 
 from compass.engine.evidence_repository import EvidenceRepository
+from compass.engine.native_inference import connection_binding
 from compass.engine.orchestrator import get_orchestrator
 from compass.engine.passage_retrieval import RetrievalEmpty, line_range, retrieve, trim_receipt
 from compass.engine.task_repository import TaskConflict, TaskRepository
@@ -132,10 +133,10 @@ class TaskService:
             if brief.state != "accepted" or not brief.decision:
                 raise ValueError("Accept a reviewed brief and choose a direction before drafting a handoff")
 
-    def start_job(self, task_id, expected_revision, kind, request_id, timeout_seconds=120):
+    def start_job(self, task_id, expected_revision, kind, request_id, timeout_seconds=120, orchestrator=None):
         from compass.engine.task_jobs import get_job_manager
         return get_job_manager().start(self, task_id, expected_revision, kind,
-                                       request_id, get_orchestrator(), timeout_seconds)
+                                       request_id, orchestrator or get_orchestrator(), timeout_seconds)
 
     def generate(self, task_id: str, expected_revision: int, kind: ArtifactKind) -> Task:
         from compass.engine.task_jobs import get_job_manager
@@ -215,6 +216,7 @@ class TaskService:
         self.validate_body(task, body, receipt.passages)
         artifact = Artifact(
             body=body, reviews=["unreviewed"] * len(body.claims), retrieval=receipt, workflow_version="decision-task-v2",
+            connection=connection_binding(orchestrator.provider),
             model=completion.model if completion else orchestrator.default_model,
             provider=completion.provider if completion else type(orchestrator.provider).__name__,
             input_tokens=completion.input_tokens if completion else None,
@@ -238,7 +240,7 @@ class TaskService:
             setattr(task, kind, Artifact(
                 body=body, reviews=["unreviewed"] * len(body.claims),
                 model=previous.model, provider=previous.provider, edited_by_user=True,
-                retrieval=previous.retrieval, workflow_version=previous.workflow_version,
+                retrieval=previous.retrieval, workflow_version=previous.workflow_version, connection=previous.connection,
                 input_tokens=previous.input_tokens, output_tokens=previous.output_tokens,
             ))
             if kind == "brief":

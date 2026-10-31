@@ -26,6 +26,7 @@ export interface RetrievedPassage {
   id:string;document_id:string;version:string;chunk_id:string;source:string;source_name:string;source_type:string;title:string;
   start:number;end:number;line_start:number;line_end:number;content:string;
 }
+export interface ConnectionBinding { id:string;revision:number;provider:string;model:string;serving_provider:string }
 export interface Artifact {
   body: DraftBody;
   reviews: Review[];
@@ -37,6 +38,7 @@ export interface Artifact {
   output_tokens?: number | null;
   edited_by_user: boolean;
   retrieval?:RetrievalReceipt|null;
+  connection?:ConnectionBinding|null;
 }
 export interface DecisionTask {
   id: string;
@@ -67,4 +69,5 @@ export interface GenerationJob {
   error_code: string | null;
   message: string | null;
   draining: boolean;
+  connection?:ConnectionBinding|null;
 }

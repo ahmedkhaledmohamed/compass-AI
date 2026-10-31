@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { Home } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useWorkspaceStore } from "../stores/workspace";
 import { useWorkspaceManager } from "../stores/workspaceManager";
+import WorkspaceRecovery from "../components/workspace/WorkspaceRecovery";
 import SourceConnector from "../components/workspace/SourceConnector";
 import IngestButton from "../components/workspace/IngestButton";
 import LegacyArtifacts from "../components/workspace/LegacyArtifacts";
@@ -17,6 +18,7 @@ export default function WorkspacePage() {
   const evidenceSummary = useWorkspaceStore((s) => s.evidenceSummary);
   const { loaded, loadWorkspaces, openWorkspace } = useWorkspaceManager();
   const navigate = useNavigate();
+  const location=useLocation();
 
   useEffect(() => {
     if (!loaded) loadWorkspaces();
@@ -35,6 +37,7 @@ export default function WorkspacePage() {
   // Load workspace state from engine and auto-ingest if needed
   useEffect(() => {
     if (!workspacePath) return;
+    let cancelled=false;
     (async () => {
       try {
         const info = (await window.compass.engine.call("/workspace/info", {
@@ -47,7 +50,7 @@ export default function WorkspacePage() {
           evidence_count: number;
           evidence_summary?:Record<string,number>;
         };
-        if (info.status === "ok") {
+        if (info.status === "ok" && !cancelled) {
           // Populate sources in the store
           const store = useWorkspaceStore.getState();
           store.setSources(
@@ -69,6 +72,7 @@ export default function WorkspacePage() {
         console.error("Failed to load workspace info:", err);
       }
     })();
+    return ()=>{cancelled=true;};
   }, [workspacePath]);
 
   if (!workspacePath) {
@@ -93,6 +97,7 @@ export default function WorkspacePage() {
 
       </div>
 
+      {location.state?.restoredBackup&&<p role="status" className="mb-6 text-sm text-neutral-300">Backup restored into a new workspace. Source connections were not restored; approve sources before importing again.</p>}
       <div className="grid grid-cols-3 gap-3 mb-8">
         <StatusCard label="Sources" value={sources.length} />
         <StatusCard label="Evidence" value={evidenceCount} />
@@ -116,6 +121,7 @@ export default function WorkspacePage() {
       </section>
 
       <LegacyArtifacts workspacePath={workspacePath} />
+      <WorkspaceRecovery key={workspacePath} workspace={workspacePath} />
     </div>
   );
 }

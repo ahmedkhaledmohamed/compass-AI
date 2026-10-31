@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from compass.backup_api import router as backup_router
 from compass.config import (
     CONFIG_FILE,
     ProductConfig,
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Compass Engine", version="0.1.0", lifespan=lifespan)
 app.include_router(task_router)
 app.include_router(import_router)
+app.include_router(backup_router)
 
 @app.middleware("http")
 async def authenticate_engine_request(request: Request, call_next):

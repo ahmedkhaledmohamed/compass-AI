@@ -109,6 +109,8 @@ interface NativeWorkspace {
   id:string; path:string; name:string; description:string; created_at:string; last_opened:string;
 }
 interface NativeWorkspaces {
+  backup(id:string):Promise<{status:"saved"|"cancelled";tasks?:number;snapshots?:number;documents?:number;bytes?:number}>;
+  restore():Promise<NativeWorkspace|null>;
   list():Promise<{workspaces:NativeWorkspace[];activeWorkspaceId:string|null}>;
   choose(purpose:"workspace"|"source",kind:"directory"|"file"):Promise<{id:string;label:string}|null>;
   create(selection:string,name:string,description:string):Promise<NativeWorkspace>;

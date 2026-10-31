@@ -74,8 +74,8 @@ app.whenReady().then(async () => {
     encrypt:value => safeStorage.encryptString(value),
     decrypt:value => safeStorage.decryptString(value),
   }), url => shell.openExternal(url), (endpoint,body) => engineFetch(endpoint,body ? {body} : undefined), undefined, process.env.COMPASS_HF_CLIENT_ID || "");
-  workspaceAccess = new WorkspaceAccess(path.join(app.getPath("userData"),"workspaces.json"),async kind=>{
-    const result=await dialog.showOpenDialog({properties:kind==="directory"?["openDirectory"]:["openFile"]});
+  workspaceAccess = new WorkspaceAccess(path.join(app.getPath("userData"),"workspaces.json"),async (kind,purpose)=>{
+    const result=await dialog.showOpenDialog({title:purpose==="backup"?"Choose a Compass backup file":purpose==="restore-parent"?"Choose a parent folder for the new restored workspace":undefined,filters:purpose==="backup"?[{name:"Compass backup",extensions:["json"]}]:undefined,properties:kind==="directory"?["openDirectory"]:["openFile"]});
     return result.canceled?null:result.filePaths[0];
   },(endpoint,body)=>engineFetch(endpoint,body?{body}:undefined));
   createWindow();
@@ -351,3 +351,10 @@ handleMainIPC("task-export",async(_event,request)=>saveTaskExport(nativeWorkspac
   const result=await dialog.showSaveDialog({defaultPath:name,filters:[{name:"Markdown",extensions:["md"]}],message:"Save the accepted artifact, cited passages and source manifest. Exported copies remain separate from Compass."});
   return result.canceled?null:result.filePath||null;
 }));
+
+
+handleMainIPC("workspaces-backup",async(_event,id)=>nativeWorkspaces().backup(id,async name=>{
+  const result=await dialog.showSaveDialog({defaultPath:name,filters:[{name:"Compass backup",extensions:["json"]}],message:"Back up saved task history, imported evidence and older saved documents. Contains source text and metadata. Credentials, source paths, source approvals, vector caches and separate output/export files are excluded."});
+  return result.canceled?null:result.filePath||null;
+}));
+handleMainIPC("workspaces-restore",()=>nativeWorkspaces().restore());

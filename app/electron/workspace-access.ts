@@ -43,7 +43,7 @@ function privateStorage(root:string) {
 export class WorkspaceAccess {
   private selections=new Map<string,{identity:Identity;expires:number;purpose:"workspace"|"source"}>();
   private tail:Promise<unknown>=Promise.resolve();
-  constructor(private file:string,private pick:(kind:"directory"|"file")=>Promise<string|null>,private engine:Engine) {}
+  constructor(private file:string,private pick:(kind:"directory"|"file",purpose?:"backup"|"restore-parent")=>Promise<string|null>,private engine:Engine) {}
   private serial<T>(work:()=>Promise<T>):Promise<T> {const next=this.tail.then(work,work);this.tail=next.catch(()=>{});return next;}
   private read():Registry {
     if(!fs.existsSync(this.file))return {version:1,active:null,workspaces:[]};
@@ -127,6 +127,34 @@ export class WorkspaceAccess {
     const result=await this.engine("/workspace/info",{workspace_path:selected.path});
     if(result.status!=="ok")throw new Error("This workspace could not be opened. Its saved files have been kept.");
     unchanged(selected);return this.register(selected,safeText(result.name,200),safeText(result.description||"",4000));
+  });}
+  backup(id:unknown,choose:(name:string)=>Promise<string|null>){return this.serial(async()=>{
+    const record=this.record(id);
+    const destination=await choose("compass-workspace.compass-backup.json");
+    if(!destination)return {status:"cancelled" as const};
+    if(!path.isAbsolute(destination)||!destination.endsWith(".compass-backup.json"))throw new Error("Choose a .compass-backup.json destination.");
+    this.record(id);
+    const result=await this.engine("/workspace/backup",{workspace_path:record.path,backup_path:destination});
+    if(result.status!=="ok")throw new Error(typeof result.detail==="string"?result.detail:"Workspace backup failed. Existing work was kept.");
+    return {status:"saved" as const,tasks:result.tasks,snapshots:result.snapshots,documents:result.documents,bytes:result.bytes};
+  });}
+  restore(){return this.serial(async()=>{
+    this.read();
+    const idle=async()=>{const result=await this.engine("/connections/readiness");if(result.status!=="ok"||result.busy!==false)throw new Error("Finish or cancel active workspace operations before restoring a backup.");};
+    await idle();
+    const file=await this.pick("file","backup");if(!file)return null;
+    const backup=identity(file);
+    if(backup.directory||!backup.path.endsWith(".compass-backup.json")||fs.statSync(backup.path).size>250_000_000)throw new Error("Choose a Compass backup file of at most 250 MB.");
+    const parentPath=await this.pick("directory","restore-parent");if(!parentPath)return null;
+    const parent=identity(parentPath);if(!parent.directory)throw new Error("Choose a parent folder for the restored workspace.");
+    unchanged(backup);unchanged(parent);await idle();
+    const result=await this.engine("/workspace/restore",{backup_path:backup.path,parent_path:parent.path});
+    if(result.status!=="ok")throw new Error(typeof result.detail==="string"?result.detail:"Workspace restore failed. Existing work was kept.");
+    unchanged(parent);
+    if(typeof result.workspace_path!=="string"||path.dirname(result.workspace_path)!==parent.path||!/^Compass restored [a-f0-9]{32}$/.test(path.basename(result.workspace_path)))throw new Error("The restored workspace could not be registered. Open its new folder with the native picker.");
+    const selected=identity(result.workspace_path);
+    if(!selected.directory)throw new Error("The restored workspace is unavailable.");
+    return this.register(selected,safeText(result.name,200),safeText(result.description||"",4000));
   });}
   activate(id:unknown){return this.serial(async()=>{const record=this.record(id);const data=this.read();data.active=record.id;data.workspaces.find(item=>item.id===id)!.last_opened=new Date().toISOString();this.write(data);return publicWorkspace(record);});}
   forget(id:unknown){return this.serial(async()=>{const readiness=await this.engine("/connections/readiness");if(readiness.status!=="ok" || readiness.busy!==false)throw new Error("Finish or cancel generation before removing a workspace registration.");const data=this.read();if(typeof id!=="string" || !data.workspaces.some(item=>item.id===id))throw new Error("Workspace not found.");data.workspaces=data.workspaces.filter(item=>item.id!==id);if(data.active===id)data.active=null;this.write(data);return this.list();});}

@@ -1,3 +1,4 @@
+import WorkspaceRecovery from "../components/workspace/WorkspaceRecovery";
 import { useState } from "react";
 import {
   Compass,
@@ -108,6 +109,7 @@ export default function OnboardingPage() {
               <ArrowRight className="w-4 h-4" />
             </button>
             <button onClick={handleOpenExisting} className="block mx-auto mt-4 text-sm text-compass-accent underline">Open existing workspace</button>
+            <WorkspaceRecovery workspace={null} onRestored={completeOnboarding}/>
             {error && <p role="alert" className="mt-4 text-red-400 text-sm">{error}</p>}
           </div>
         )}
